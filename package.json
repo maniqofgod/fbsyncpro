@@ -1,0 +1,79 @@
+{
+  "name": "reelsync-pro",
+  "version": "1.0.0",
+  "description": "Aplikasi desktop untuk otomasi unggahan Facebook Reels dan Video Posts",
+  "main": "server.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "electron-builder",
+    "build-win": "electron-builder --win",
+    "build-mac": "electron-builder --mac",
+    "build-linux": "electron-builder --linux",
+    "test": "npm run test-app && npm run test-cookies",
+    "test-app": "node scripts/test-app.js",
+    "test-cookies": "node scripts/test-facebook-cookies.js",
+    "setup": "node scripts/setup-database.js"
+  },
+  "keywords": [
+    "facebook",
+    "reels",
+    "video",
+    "automation",
+    "webapp",
+    "puppeteer"
+  ],
+  "author": "Supernova Corp",
+  "license": "MIT",
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.17.2",
+    "better-sqlite3": "^9.4.0",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.1.1",
+    "electron": "^25.9.8",
+    "electron-store": "^8.1.0",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.2",
+    "puppeteer": "^21.0.0"
+  },
+  "build": {
+    "appId": "com.supernovacorp.reelsyncpro",
+    "productName": "ReelSync Pro",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*",
+      "scripts/**/*",
+      "geminiService.js",
+      "geminiStore.js",
+      "db.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon-256.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon-256.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon-256.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true
+    }
+  }
+}

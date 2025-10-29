@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReelSync Pro - Facebook Video Upload Automation</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1><i class="fab fa-facebook"></i> ReelSync Pro</h1>
+                <span class="version">v1.0.0 (Web)</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Navigation Tabs -->
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="accounts">
+                    <i class="fas fa-users"></i>
+                    Manajemen Akun
+                </button>
+                <button class="nav-tab" data-tab="upload">
+                    <i class="fas fa-upload"></i>
+                    Antrian Upload
+                </button>
+                <button class="nav-tab" data-tab="queue">
+                    <i class="fas fa-list"></i>
+                    Status Antrian
+                </button>
+                <button class="nav-tab" data-tab="analytics">
+                    <i class="fas fa-chart-bar"></i>
+                    Analytics
+                </button>
+                <button class="nav-tab" data-tab="gemini">
+                    <i class="fas fa-robot"></i>
+                    AI Caption
+                </button>
+                <button class="nav-tab" data-tab="settings">
+                    <i class="fas fa-cog"></i>
+                    Pengaturan
+                </button>
+                <button class="nav-tab" data-tab="logs">
+                    <i class="fas fa-terminal"></i>
+                    Log Aktivitas
+                </button>
+            </nav>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Accounts Tab -->
+                <div class="tab-pane active" id="accounts">
+                    <div class="tab-header">
+                        <h2>Manajemen Akun Facebook</h2>
+                        <button class="btn-primary" id="add-account-btn">
+                            <i class="fas fa-plus"></i> Tambah Akun
+                        </button>
+                    </div>
+
+                    <div class="accounts-list" id="accounts-list">
+                        <div class="empty-state">
+                            <i class="fas fa-users"></i>
+                            <h3>Belum ada akun</h3>
+                            <p>Klik tombol "Tambah Akun" untuk menambahkan akun Facebook pertama Anda.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Tab -->
+                <div class="tab-pane" id="upload">
+                    <div class="tab-header">
+                        <h2>Upload Video Baru</h2>
+                    </div>
+
+                    <form class="upload-form" id="upload-form">
+                        <div class="form-group">
+                            <label for="account-select">Pilih Akun Facebook:</label>
+                            <select id="account-select" required>
+                                <option value="">-- Pilih Akun --</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="page-select">Pilih Halaman:</label>
+                            <select id="page-select" required disabled>
+                                <option value="">-- Pilih Halaman --</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="upload-type">Jenis Upload:</label>
+                            <div class="radio-group">
+                                <label class="radio-label">
+                                    <input type="radio" name="upload-type" value="reel" checked>
+                                    <span class="radio-custom"></span>
+                                    Facebook Reels
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="upload-type" value="post">
+                                    <span class="radio-custom"></span>
+                                    Video Post
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="video-file">File Video:</label>
+                            <div class="file-input-wrapper">
+                                <input type="text" id="video-file" readonly placeholder="Pilih file video...">
+                                <button type="button" class="btn-secondary" id="select-file-btn">
+                                    <i class="fas fa-folder-open"></i> Pilih File
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="caption">Caption:</label>
+                            <div class="caption-input-wrapper">
+                                <textarea id="caption" rows="4" placeholder="Tulis caption untuk video Anda..."></textarea>
+                                <div class="caption-actions">
+                                    <select id="caption-language" class="language-select">
+                                        <option value="indonesia">Indonesia</option>
+                                        <option value="english">English</option>
+                                        <option value="sunda">Sunda</option>
+                                        <option value="mandarin">Mandarin</option>
+                                    </select>
+                                    <button type="button" class="btn-secondary" id="generate-caption-btn">
+                                        <i class="fas fa-magic"></i> Generate Caption
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="form-help">Caption akan ditambahkan ke video saat diupload. Gunakan Generate Caption untuk membuat caption otomatis berdasarkan nama file.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="schedule-time">Jadwal Upload:</label>
+                            <input type="datetime-local" id="schedule-time">
+                            <small class="form-help">Biarkan kosong untuk upload langsung.</small>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary" id="preview-btn">
+                                <i class="fas fa-eye"></i> Preview
+                            </button>
+                            <button type="submit" class="btn-send" id="add-to-queue-btn" disabled>
+                                <div class="btn-send-content">
+                                    <i class="fas fa-paper-plane"></i>
+                                    <span class="btn-text">Kirim ke Facebook</span>
+                                    <div class="btn-shine"></div>
+                                </div>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Queue Tab -->
+                <div class="tab-pane" id="queue">
+                    <div class="tab-header">
+                        <h2>Status Antrian Upload</h2>
+                        <div class="queue-actions">
+                            <button class="btn-secondary" id="refresh-queue-btn">
+                                <i class="fas fa-sync-alt"></i> Refresh Status
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="queue-stats">
+                        <div class="stat-card">
+                            <span class="stat-number" id="pending-count">0</span>
+                            <span class="stat-label">Menunggu</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="processing-count">0</span>
+                            <span class="stat-label">Diproses</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="completed-count">0</span>
+                            <span class="stat-label">Selesai</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="failed-count">0</span>
+                            <span class="stat-label">Gagal</span>
+                        </div>
+                    </div>
+
+                    <div class="queue-list" id="queue-list">
+                        <div class="empty-state">
+                            <i class="fas fa-list"></i>
+                            <h3>Antrian kosong</h3>
+                            <p>Tambahkan video ke antrian untuk mulai upload.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics Tab -->
+                <div class="tab-pane" id="analytics">
+                    <div class="tab-header">
+                        <h2>Analytics & Performance Dashboard</h2>
+                        <div class="analytics-actions">
+                            <select id="time-range-select" class="time-range-select">
+                                <option value="7d">7 Hari Terakhir</option>
+                                <option value="30d" selected>30 Hari Terakhir</option>
+                                <option value="90d">90 Hari Terakhir</option>
+                            </select>
+                            <button class="btn-secondary" id="refresh-analytics-btn">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button class="btn-secondary" id="export-analytics-btn">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Overview Stats -->
+                    <div class="analytics-section">
+                        <h3>Overview</h3>
+                        <div class="analytics-stats-grid" id="overview-stats">
+                            <div class="stat-card">
+                                <span class="stat-number" id="total-uploads">0</span>
+                                <span class="stat-label">Total Uploads</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-number" id="success-rate">0%</span>
+                                <span class="stat-label">Success Rate</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-number" id="total-views">0</span>
+                                <span class="stat-label">Total Views</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-number" id="avg-engagement">0%</span>
+                                <span class="stat-label">Avg Engagement</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Performance by Type -->
+                    <div class="analytics-section">
+                        <h3>Performance by Content Type</h3>
+                        <div class="performance-comparison" id="performance-by-type">
+                            <div class="empty-state">
+                                <i class="fas fa-chart-pie"></i>
+                                <h3>Belum ada data</h3>
+                                <p>Data analytics akan muncul setelah upload pertama.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Comparison -->
+                    <div class="analytics-section">
+                        <h3>Account Performance</h3>
+                        <div class="account-comparison" id="account-comparison">
+                            <div class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <h3>Belum ada data akun</h3>
+                                <p>Performance comparison akan muncul setelah upload dari multiple accounts.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Best Posting Times -->
+                    <div class="analytics-section">
+                        <h3>Best Posting Times</h3>
+                        <div class="best-times" id="best-posting-times">
+                            <div class="empty-state">
+                                <i class="fas fa-clock"></i>
+                                <h3>Belum ada data waktu</h3>
+                                <p>Best posting times akan dianalisis berdasarkan engagement patterns.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Content Categories -->
+                    <div class="analytics-section">
+                        <h3>Content Categories Performance</h3>
+                        <div class="category-performance" id="category-performance">
+                            <div class="empty-state">
+                                <i class="fas fa-tags"></i>
+                                <h3>Belum ada kategori</h3>
+                                <p>Category performance akan muncul setelah upload dengan different content types.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trends Chart -->
+                    <div class="analytics-section">
+                        <h3>Upload Trends</h3>
+                        <div class="trends-chart" id="trends-chart">
+                            <div class="empty-state">
+                                <i class="fas fa-chart-line"></i>
+                                <h3>Belum ada trend data</h3>
+                                <p>Trend analysis akan muncul setelah beberapa hari upload activity.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gemini Tab -->
+                <div class="tab-pane" id="gemini">
+                    <div class="tab-header">
+                        <h2>AI Caption Generator</h2>
+                        <button class="btn-primary" id="add-gemini-api-btn">
+                            <i class="fas fa-plus"></i> Tambah API Key
+                        </button>
+                    </div>
+
+                    <div class="gemini-stats">
+                        <div class="stat-card">
+                            <span class="stat-number" id="gemini-apis-count">0</span>
+                            <span class="stat-label">API Keys</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="gemini-usage-today">0</span>
+                            <span class="stat-label">Requests Today</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="gemini-success-rate">0%</span>
+                            <span class="stat-label">Success Rate</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="gemini-total-requests">0</span>
+                            <span class="stat-label">Total Requests</span>
+                        </div>
+                    </div>
+
+                    <div class="gemini-content">
+                        <div class="gemini-section">
+                            <h3>API Keys Management</h3>
+                            <div class="gemini-apis-list" id="gemini-apis-list">
+                                <div class="empty-state">
+                                    <i class="fas fa-key"></i>
+                                    <h3>Belum ada API Key</h3>
+                                    <p>Tambahkan API key Gemini untuk mulai generate caption otomatis.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="gemini-section">
+                            <h3>Usage Statistics</h3>
+                            <div class="usage-stats" id="usage-stats">
+                                <div class="empty-state">
+                                    <i class="fas fa-chart-bar"></i>
+                                    <h3>Belum ada statistik</h3>
+                                    <p>Statistik penggunaan akan muncul setelah API digunakan.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Tab -->
+                <div class="tab-pane" id="settings">
+                    <div class="tab-header">
+                        <h2>Pengaturan Aplikasi</h2>
+                    </div>
+
+                    <form class="settings-form" id="settings-form">
+                        <div class="form-group">
+                            <label for="upload-delay">Delay Antar Upload (detik):</label>
+                            <input type="number" id="upload-delay" min="10" max="300" value="30">
+                            <small class="form-help">Waktu jeda antara upload untuk menghindari rate limiting.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="max-retries">Maksimal Retry:</label>
+                            <input type="number" id="max-retries" min="1" max="5" value="3">
+                            <small class="form-help">Jumlah maksimal percobaan ulang jika upload gagal.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="auto-start-queue">
+                                <span class="checkbox-custom"></span>
+                                Mulai antrian otomatis saat aplikasi dibuka
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="show-notifications">
+                                <span class="checkbox-custom"></span>
+                                Tampilkan notifikasi untuk setiap upload
+                            </label>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="show-browser">
+                                <span class="checkbox-custom"></span>
+                                Tampilkan browser saat upload (untuk monitoring)
+                            </label>
+                            <small class="form-help">Jika dicentang, browser akan terlihat saat upload. Jika tidak, browser akan berjalan di background.</small>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn-secondary" id="reset-settings-btn">
+                                <i class="fas fa-undo"></i> Reset Default
+                            </button>
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-save"></i> Simpan Pengaturan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Logs Tab -->
+                <div class="tab-pane" id="logs">
+                    <div class="tab-header">
+                        <h2>Log Aktivitas</h2>
+                        <div class="log-actions">
+                            <button class="btn-secondary" id="clear-logs-btn">
+                                <i class="fas fa-trash"></i> Bersihkan Log
+                            </button>
+                            <button class="btn-secondary" id="export-logs-btn">
+                                <i class="fas fa-download"></i> Export Log
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="logs-container" id="logs-container">
+                        <div class="empty-state">
+                            <i class="fas fa-terminal"></i>
+                            <h3>Belum ada aktivitas</h3>
+                            <p>Log aktivitas akan muncul di sini saat aplikasi berjalan.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <div class="status-left">
+                <span class="status-text" id="status-text">Siap digunakan</span>
+            </div>
+            <div class="status-right">
+                <span class="status-text">Web App</span>
+                <span class="separator">|</span>
+                <span class="status-text" id="queue-status">Antrian: 0 item</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Modal for Account Management -->
+    <div class="modal" id="account-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Tambah Akun Facebook</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="modal-form" id="account-form">
+                <div class="form-group">
+                    <label for="account-name">Nama Akun:</label>
+                    <input type="text" id="account-name" required placeholder="Contoh: Akun Bisnis Saya">
+                </div>
+                <input type="hidden" id="account-type" value="personal">
+                <div class="form-group">
+                    <label for="account-cookie">Cookie Facebook:</label>
+                    <textarea id="account-cookie" rows="6" required placeholder="Masukkan cookie Facebook Anda di sini..."></textarea>
+                    <small class="form-help">
+                        Cara mendapatkan cookie: Buka Facebook di browser, tekan F12 → Application → Cookies → https://www.facebook.com
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="test-cookie-btn">
+                        <i class="fas fa-vial"></i> Test Cookie
+                    </button>
+                    <button type="button" class="btn-secondary" id="cancel-account-btn">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                    <button type="submit" class="btn-primary" id="save-account-btn">
+                        <i class="fas fa-save"></i> Simpan & Validasi
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Gemini API Management -->
+    <div class="modal" id="gemini-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="gemini-modal-title">Tambah API Key Gemini</h3>
+                <button class="modal-close" id="gemini-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="modal-form" id="gemini-form">
+                <div class="form-group">
+                    <label for="gemini-api-name">Nama API Key:</label>
+                    <input type="text" id="gemini-api-name" required placeholder="Contoh: API Key Utama">
+                </div>
+                <div class="form-group">
+                    <label for="gemini-api-key">API Key Gemini:</label>
+                    <textarea id="gemini-api-key" rows="4" required placeholder="Masukkan API key Gemini Anda di sini..."></textarea>
+                    <small class="form-help">
+                        Dapatkan API key dari: <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a>
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="test-gemini-api-btn">
+                        <i class="fas fa-vial"></i> Test API Key
+                    </button>
+                    <button type="button" class="btn-secondary" id="cancel-gemini-btn">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                    <button type="submit" class="btn-primary" id="save-gemini-btn">
+                        <i class="fas fa-save"></i> Simpan API Key
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!--
+        Note: API is available through HTTP fetch to the backend server
+        This is now a web application instead of Electron
+    -->
+    <script src="app.js"></script>
+</body>
+</html>
