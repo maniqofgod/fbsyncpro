@@ -918,8 +918,8 @@ async function startServer() {
     try {
         await initializeModules();
 
-        app.listen(PORT, () => {
-            console.log(`🚀 ReelSync Pro web server running on http://localhost:${PORT}`);
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 ReelSync Pro web server running on http://0.0.0.0:${PORT}`);
             console.log('💡 Open your browser and go to the URL above');
         });
     } catch (error) {

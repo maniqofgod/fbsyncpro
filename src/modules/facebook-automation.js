@@ -623,41 +623,54 @@ try {
                 const indicator = document.createElement('div');
                 indicator.id = 'posting-indicator';
                 indicator.style.position = 'fixed';
-                indicator.style.left = '625px';
-                indicator.style.top = '815px';
-                indicator.style.width = '50px';
-                indicator.style.height = '50px';
-                indicator.style.border = '4px solid purple';
+                indicator.style.left = '620px';
+                indicator.style.top = '810px';
+                indicator.style.width = '60px';
+                indicator.style.height = '60px';
+                indicator.style.border = '5px solid #FF0000';
                 indicator.style.borderRadius = '50%';
-                indicator.style.backgroundColor = 'rgba(128, 0, 128, 0.8)';
+                indicator.style.backgroundColor = 'rgba(255, 0, 0, 0.9)';
                 indicator.style.zIndex = '999999';
                 indicator.style.pointerEvents = 'none';
-                indicator.style.boxShadow = '0 0 20px rgba(128, 0, 128, 1)';
-                indicator.textContent = 'POST';
+                indicator.style.boxShadow = '0 0 30px rgba(255, 0, 0, 1), 0 0 60px rgba(255, 0, 0, 0.8), inset 0 0 20px rgba(255, 255, 255, 0.3)';
+                indicator.textContent = 'POSTING';
                 indicator.style.color = 'white';
-                indicator.style.fontSize = '11px';
+                indicator.style.fontSize = '12px';
                 indicator.style.display = 'flex';
                 indicator.style.alignItems = 'center';
                 indicator.style.justifyContent = 'center';
                 indicator.style.fontWeight = 'bold';
+                indicator.style.textShadow = '1px 1px 2px black';
                 document.body.appendChild(indicator);
 
+                // Add pulsating animation
+                let scale = 1;
+                const pulse = setInterval(() => {
+                    scale = scale === 1 ? 1.1 : 1;
+                    indicator.style.transform = `scale(${scale})`;
+                }, 200);
+
                 setTimeout(() => {
+                    clearInterval(pulse);
                     if (indicator.parentNode) {
                         indicator.parentNode.removeChild(indicator);
                     }
-                }, 2000);
+                }, 3000);
             });
 
-            console.log('🎯 Clicking posting button at (650, 830)');
-            await page.mouse.click(650, 830);
-            console.log('✅ Posting button clicked at (650, 830)');
+            console.log('🎯 Clicking posting button at (650, 840)');
+            await page.mouse.click(650, 840);
+            console.log('✅ Posting button clicked at (650, 840)');
+
+            // Take screenshot after posting button click
+            await page.screenshot({ path: 'debug-700-615-after-posting-click.png', fullPage: true });
+            console.log('📸 Screenshot after posting button click: debug-700-615-after-posting-click.png');
 
             // Wait for success message after posting
             console.log('Menunggu pesan sukses...');
             let successMessage = { found: false };
-            let attempts = 0;
-            const maxAttempts = 15; // 30 detik total (15 x 2 detik)
+            let attempts = 2;
+            const maxAttempts = 20; // 30 detik total (15 x 2 detik)
 
             while (!successMessage.found && attempts < maxAttempts) {
                 successMessage = await page.evaluate(() => {

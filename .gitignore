@@ -68,3 +68,7 @@ Thumbs.db
 # Electron specific
 app/dist/
 release/
+
+# Database and uploads
+database.sqlite
+uploads/
