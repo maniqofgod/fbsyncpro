@@ -111,7 +111,26 @@ function initializeElements() {
         geminiUsageToday: document.getElementById('gemini-usage-today'),
         geminiTotalRequests: document.getElementById('gemini-total-requests'),
         geminiSuccessRate: document.getElementById('gemini-success-rate'),
-        usageStats: document.getElementById('usage-stats')
+        usageStats: document.getElementById('usage-stats'),
+
+        // Edit Queue Modal
+        editQueueModal: document.getElementById('edit-queue-modal'),
+        editQueueModalClose: document.getElementById('edit-queue-modal-close'),
+        editQueueModalTitle: document.getElementById('edit-queue-modal-title'),
+        editQueueForm: document.getElementById('edit-queue-form'),
+        editQueueId: document.getElementById('edit-queue-id'),
+        editAccountSelect: document.getElementById('edit-account-select'),
+        editPageSelect: document.getElementById('edit-page-select'),
+        editUploadType: document.querySelectorAll('input[name="edit-upload-type"]'),
+        editCaption: document.getElementById('edit-caption'),
+        editCaptionLanguage: document.getElementById('edit-caption-language'),
+        editGenerateCaptionBtn: document.getElementById('edit-generate-caption-btn'),
+        editScheduleTime: document.getElementById('edit-schedule-time'),
+        editQueueStatus: document.getElementById('edit-queue-status'),
+        editRetryCount: document.getElementById('edit-retry-count'),
+        retryCountGroup: document.getElementById('retry-count-group'),
+        cancelEditQueueBtn: document.getElementById('cancel-edit-queue-btn'),
+        saveEditQueueBtn: document.getElementById('save-edit-queue-btn')
     };
 }
 
@@ -151,14 +170,22 @@ function setupEventListeners() {
     elements.clearLogsBtn.addEventListener('click', clearLogs);
     elements.exportLogsBtn.addEventListener('click', exportLogs);
 
-    // Gemini AI Caption
-    elements.generateCaptionBtn.addEventListener('click', generateCaption);
-    elements.addGeminiApiBtn.addEventListener('click', () => openGeminiModal());
-    elements.saveGeminiBtn.addEventListener('click', saveGeminiApi);
-    elements.cancelGeminiBtn.addEventListener('click', closeGeminiModal);
-    elements.geminiModalClose.addEventListener('click', closeGeminiModal);
-    elements.testGeminiApiBtn.addEventListener('click', testGeminiApi);
-}
+        // Gemini AI Caption
+        elements.generateCaptionBtn.addEventListener('click', generateCaption);
+        elements.addGeminiApiBtn.addEventListener('click', () => openGeminiModal());
+        elements.saveGeminiBtn.addEventListener('click', saveGeminiApi);
+        elements.cancelGeminiBtn.addEventListener('click', closeGeminiModal);
+        elements.geminiModalClose.addEventListener('click', closeGeminiModal);
+        elements.testGeminiApiBtn.addEventListener('click', testGeminiApi);
+
+        // Edit Queue Modal
+        elements.cancelEditQueueBtn.addEventListener('click', closeEditQueueModal);
+        elements.editQueueModalClose.addEventListener('click', closeEditQueueModal);
+        elements.editQueueForm.addEventListener('submit', saveEditQueueItem);
+        elements.editGenerateCaptionBtn.addEventListener('click', generateCaptionForEdit);
+        elements.editAccountSelect.addEventListener('change', () => updateEditPageSelect());
+        elements.editQueueStatus.addEventListener('change', () => toggleRetryCountGroup());
+    }
 
 // Setup navigation
 function setupNavigation() {
@@ -662,6 +689,7 @@ function updateQueueDisplay() {
     const stats = {
         pending: appState.uploadQueue.filter(item => item.status === 'pending').length,
         processing: appState.uploadQueue.filter(item => item.status === 'processing').length,
+        retry: appState.uploadQueue.filter(item => item.status === 'retry').length,
         completed: appState.uploadQueue.filter(item => item.status === 'completed').length,
         failed: appState.uploadQueue.filter(item => item.status === 'failed').length
     };
@@ -690,6 +718,56 @@ function updateQueueDisplay() {
         const pageName = page?.name || item.pageName || item.page || 'Unknown';
         const pageId = item.page;
 
+        // Format schedule time if exists
+        let scheduleInfo = '';
+        if (item.schedule) {
+            const scheduleTime = new Date(item.schedule);
+            const now = new Date();
+
+            if (scheduleTime > now) {
+                // Future schedule - show time remaining
+                const timeDiff = scheduleTime - now;
+                const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+                const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+                let timeRemaining = '';
+                if (hours > 0) {
+                    timeRemaining += `${hours}j `;
+                }
+                if (minutes > 0 || hours > 0) {
+                    timeRemaining += `${minutes}m `;
+                }
+                timeRemaining += `${seconds}d`;
+
+                scheduleInfo = ` | 🕐 ${scheduleTime.toLocaleString('id-ID')} (dalam ${timeRemaining})`;
+            } else {
+                // Past schedule - just show date/time
+                scheduleInfo = ` | 🕐 ${scheduleTime.toLocaleString('id-ID')}`;
+            }
+        } else if (item.nextRetry) {
+            // Show next retry time for retry status
+            const retryTime = new Date(item.nextRetry);
+            const now = new Date();
+            const timeDiff = retryTime - now;
+            const minutes = Math.floor(timeDiff / (1000 * 60));
+            const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+            if (timeDiff > 0) {
+                scheduleInfo = ` | 🔄 Coba lagi dalam ${minutes}m ${seconds}d`;
+            } else {
+                scheduleInfo = ` | 🔄 Sedang mencoba lagi`;
+            }
+        }
+
+        // Get cooldown display
+        let cooldownHtml = '';
+        if (item.cooldownRemaining > 0 && (item.status === 'pending' || item.status === 'scheduled')) {
+            const minutes = Math.floor(item.cooldownRemaining / 60);
+            const seconds = item.cooldownRemaining % 60;
+            cooldownHtml = `<div class="cooldown-info">⏰ Next upload dalam ${minutes}m ${seconds}d</div>`;
+        }
+
         // Get processing logs for processing items
         let processingLogsHtml = '';
         if (item.status === 'processing' && item.processingLogs) {
@@ -707,14 +785,38 @@ function updateQueueDisplay() {
         return `
             <div class="queue-item">
                 <div class="queue-item-info">
-                    <div class="queue-item-meta">Akun: ${accountName} | Halaman: ${pageName}-${pageId} | ${item.type === 'reel' ? 'Reels' : 'Video Post'}</div>
+                    <div class="queue-item-meta">Akun: ${accountName} | Halaman: ${pageName}-${pageId} | ${item.type === 'reel' ? 'Reels' : 'Video Post'}${scheduleInfo}</div>
                     <div class="queue-item-title">${item.caption || 'Tanpa caption'}</div>
+                    ${cooldownHtml}
                     ${processingLogsHtml}
                 </div>
                 <div class="queue-item-status ${item.status}">
                     ${item.status}
                 </div>
                 <div class="queue-item-actions">
+                    ${item.status === 'retry' || item.status === 'failed' ? `
+                        <button class="btn-warning" onclick="retryQueueItem('${item.id}')" title="Retry Upload">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                    ` : ''}
+                    ${item.status === 'retry' ? `
+                        <div class="queue-item-info-retry">
+                            <small>${item.retryCount || 0}/${appState.settings.maxRetries || 3} percobaan</small>
+                            ${item.nextRetry ? `<small>Next: ${new Date(item.nextRetry).toLocaleString()}</small>` : ''}
+                            ${item.errorMessage ? `<small class="error-msg">${item.errorMessage}</small>` : ''}
+                        </div>
+                    ` : ''}
+                    ${item.status === 'failed' ? `
+                        <div class="queue-item-info-failed">
+                            <small class="error-msg">${item.errorMessage || 'Upload gagal'}</small>
+                            <small>${item.retryCount || 0} percobaan gagal</small>
+                        </div>
+                    ` : ''}
+                    ${item.status === 'pending' || item.status === 'scheduled' ? `
+                        <button class="btn-secondary" onclick="editQueueItem('${item.id}')" title="Edit Item">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    ` : ''}
                     <button class="btn-danger" onclick="removeFromQueue('${item.id}')">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -725,6 +827,46 @@ function updateQueueDisplay() {
 
     updateStatusBar();
 }
+
+window.retryQueueItem = async function(itemId) {
+    if (confirm('Apakah Anda yakin ingin mencoba upload ulang item ini?')) {
+        try {
+            // Reset the item status to pending and reset retry count
+            const response = await fetch(`${API_BASE}/api/queue/${itemId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: 'pending',
+                    retryCount: 0, // Reset retry count for manual retry
+                    errorMessage: null // Clear error message
+                })
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                await loadAppData();
+                showToast('Item berhasil diatur untuk retry', 'success');
+            } else {
+                showToast(`Gagal mengatur retry: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            showToast(`Error: ${error.message}`, 'error');
+        }
+    }
+};
+
+window.editQueueItem = async function(itemId) {
+    const item = appState.uploadQueue.find(q => q.id === itemId);
+    if (!item) {
+        showToast('Item tidak ditemukan', 'error');
+        return;
+    }
+
+    // Populate edit modal with current data
+    openEditQueueModal(item);
+};
 
 // Make function globally available
 window.removeFromQueue = async function(itemId) {
@@ -1235,13 +1377,16 @@ elements.geminiModal?.addEventListener('click', (e) => {
     }
 });
 
-// Handle escape key for modal
+// Handle escape key for modals
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && elements.accountModal.classList.contains('show')) {
         closeAccountModal();
     }
     if (e.key === 'Escape' && elements.geminiModal.classList.contains('show')) {
         closeGeminiModal();
+    }
+    if (e.key === 'Escape' && elements.editQueueModal.classList.contains('show')) {
+        closeEditQueueModal();
     }
 });
 
@@ -1284,7 +1429,6 @@ function showAnalyticsLoading() {
         'overview-stats',
         'performance-by-type',
         'account-comparison',
-        'best-posting-times',
         'category-performance',
         'trends-chart'
     ];
@@ -1307,7 +1451,6 @@ function showAnalyticsEmpty() {
         'overview-stats',
         'performance-by-type',
         'account-comparison',
-        'best-posting-times',
         'category-performance',
         'trends-chart'
     ];
@@ -1338,8 +1481,7 @@ function updateAnalyticsDisplay() {
     // Update account comparison
     updateAccountComparison(data.accounts);
 
-    // Update best posting times
-    updateBestPostingTimes(data.bestTimes);
+
 
     // Update category performance
     updateCategoryPerformance(data.categories);
@@ -1477,32 +1619,7 @@ function updateAccountComparison(accounts) {
     `;
 }
 
-function updateBestPostingTimes(bestTimes) {
-    if (!bestTimes || bestTimes.length === 0) return;
 
-    const container = document.getElementById('best-posting-times');
-    if (!container) return;
-
-    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-    container.innerHTML = `
-        <div class="best-times">
-            ${bestTimes.slice(0, 10).map(time => `
-                <div class="time-slot">
-                    <div class="time">
-                        ${daysOfWeek[time.dayOfWeek]} ${time.hour.toString().padStart(2, '0')}:00
-                    </div>
-                    <div class="engagement">
-                        ${time.averageEngagement?.toFixed(1) || 0}% engagement
-                    </div>
-                    <div class="details">
-                        ${time.totalUploads} uploads • ${time.successRate?.toFixed(0) || 0}% success
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-    `;
-}
 
 function updateCategoryPerformance(categories) {
     if (!categories || categories.length === 0) return;
@@ -1704,6 +1821,201 @@ function extractHashtags(caption) {
     const matches = caption.match(hashtagRegex);
     return matches ? matches.map(tag => tag.substring(1)) : [];
 }
+
+// Edit Queue Modal Functions
+function openEditQueueModal(item) {
+    // Set the item ID
+    elements.editQueueId.value = item.id;
+    elements.editQueueModalTitle.textContent = `Edit Item Antrian - ${item.id}`;
+
+    // Populate account select
+    elements.editAccountSelect.innerHTML = '<option value="">-- Pilih Akun --</option>' +
+        appState.accounts.map(account => {
+            const selected = account.name === item.account ? 'selected' : '';
+            return `<option value="${account.name}" ${selected}>${account.name}</option>`;
+        }).join('');
+
+    // Populate page select based on selected account
+    updateEditPageSelect();
+    elements.editPageSelect.value = item.page || '';
+
+    // Set upload type (reel or post)
+    const uploadTypeRadios = elements.editUploadType;
+    uploadTypeRadios.forEach(radio => {
+        if (radio.value === item.type) {
+            radio.checked = true;
+        }
+    });
+
+    // Set caption and other fields
+    elements.editCaption.value = item.caption || '';
+    elements.editCaptionLanguage.value = 'indonesia'; // Default
+
+    // Set schedule time
+    if (item.schedule) {
+        elements.editScheduleTime.value = item.schedule.replace('T', ' ').substring(0, 16);
+    } else {
+        elements.editScheduleTime.value = '';
+    }
+
+    // Set status
+    elements.editQueueStatus.value = item.status || 'pending';
+
+    // Show/hide retry count group based on status
+    toggleRetryCountGroup();
+    elements.editRetryCount.value = item.attempts || 0;
+
+    // Clear any existing error messages
+    showToast('Edit modal siap digunakan', 'info');
+
+    // Show modal
+    elements.editQueueModal.classList.add('show');
+}
+
+function closeEditQueueModal() {
+    elements.editQueueModal.classList.remove('show');
+    elements.editQueueForm.reset();
+    elements.editAccountSelect.innerHTML = '<option value="">-- Pilih Akun --</option>';
+    elements.editPageSelect.innerHTML = '<option value="">-- Pilih Halaman --</option>';
+}
+
+async function updateEditPageSelect() {
+    const selectedAccountName = elements.editAccountSelect.value;
+    const selectedAccount = appState.accounts.find(acc => acc.name === selectedAccountName);
+
+    if (selectedAccount && selectedAccount.pages) {
+        elements.editPageSelect.innerHTML = '<option value="">-- Pilih Halaman --</option>' +
+            selectedAccount.pages.map(page => `<option value="${page.id}">${page.name}</option>`).join('');
+        elements.editPageSelect.disabled = false;
+    } else {
+        elements.editPageSelect.innerHTML = '<option value="">-- Pilih Halaman --</option>';
+        elements.editPageSelect.disabled = true;
+    }
+}
+
+function toggleRetryCountGroup() {
+    const selectedStatus = elements.editQueueStatus.value;
+    const retryCountGroup = elements.retryCountGroup;
+
+    // Show retry count only for retry status
+    if (selectedStatus === 'retry') {
+        retryCountGroup.style.display = 'block';
+    } else {
+        retryCountGroup.style.display = 'none';
+    }
+}
+
+async function generateCaptionForEdit() {
+    const fileName = elements.editCaption.value || 'video';
+    const language = elements.editCaptionLanguage.value;
+
+    if (!fileName) {
+        showToast('Tidak ada nama file untuk generate caption', 'warning');
+        return;
+    }
+
+    try {
+        elements.editGenerateCaptionBtn.disabled = true;
+        elements.editGenerateCaptionBtn.innerHTML = '<div class="loading"></div> Generating...';
+
+        // Call Gemini service through API
+        const result = await fetch(`${API_BASE}/api/gemini/generate-caption`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ fileName, language })
+        });
+        const response = await result.json();
+
+        if (response.success) {
+            elements.editCaption.value = response.description || '';
+            showToast('Caption berhasil digenerate untuk edit!', 'success');
+        } else {
+            showToast(`Gagal generate caption: ${response.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error: ${error.message}`, 'error');
+    } finally {
+        elements.editGenerateCaptionBtn.disabled = false;
+        elements.editGenerateCaptionBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Caption';
+    }
+}
+
+async function saveEditQueueItem(e) {
+    e.preventDefault();
+
+    const itemId = elements.editQueueId.value;
+    const updates = {
+        accountName: elements.editAccountSelect.value,
+        pageId: elements.editPageSelect.value,
+        type: document.querySelector('input[name="edit-upload-type"]:checked')?.value || 'reel',
+        caption: elements.editCaption.value.trim(),
+        schedule: elements.editScheduleTime.value ? new Date(elements.editScheduleTime.value).toISOString() : null,
+        status: elements.editQueueStatus.value
+    };
+
+    // Add retry count if status is retry
+    if (updates.status === 'retry') {
+        const retryCount = parseInt(elements.editRetryCount.value) || 0;
+        updates.attempts = retryCount;
+
+        // Calculate next retry time (1 minute * attempt count)
+        const retryDelay = retryCount * 60000; // 1 minute per attempt
+        updates.nextRetry = new Date(Date.now() + retryDelay).toISOString();
+    } else {
+        // Clear next retry if not retry status
+        updates.nextRetry = null;
+        updates.lastError = null;
+    }
+
+    // Validate required fields
+    if (!updates.accountName || !updates.pageId) {
+        showToast('Akun dan halaman harus dipilih', 'error');
+        return;
+    }
+
+    try {
+        elements.saveEditQueueBtn.disabled = true;
+        elements.saveEditQueueBtn.innerHTML = '<div class="loading"></div> Menyimpan...';
+
+        const response = await fetch(`${API_BASE}/api/queue/${itemId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updates)
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            closeEditQueueModal();
+            await loadAppData(); // Refresh the queue display
+            showToast('Item antrian berhasil diupdate!', 'success');
+        } else {
+            showToast(`Gagal mengupdate item: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error memperbaharui item: ${error.message}`, 'error');
+    } finally {
+        elements.saveEditQueueBtn.disabled = false;
+        elements.saveEditQueueBtn.innerHTML = '<i class="fas fa-save"></i> Simpan Perubahan';
+    }
+}
+
+// Handle modal click outside for edit queue modal
+elements.editQueueModal?.addEventListener('click', (e) => {
+    if (e.target === elements.editQueueModal) {
+        closeEditQueueModal();
+    }
+});
+
+// Handle escape key for edit queue modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elements.editQueueModal.classList.contains('show')) {
+        closeEditQueueModal();
+    }
+});
 
 function categorizeContent(formData) {
     const text = `${formData.caption || ''} ${formData.hashtags?.join(' ') || ''}`.toLowerCase();

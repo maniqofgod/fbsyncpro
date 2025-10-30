@@ -123,7 +123,42 @@ function updateSetting(key, value) {
 
 function getQueueItems() {
     try {
-        return db.prepare('SELECT * FROM queue ORDER BY created_at DESC').all();
+        const items = db.prepare('SELECT * FROM queue ORDER BY created_at DESC').all();
+
+        // Add cooldown information for each item
+        const now = new Date();
+        const settings = getSettings();
+        const cooldownMap = new Map();
+
+        // Calculate last completion time for each account+page combination
+        items.forEach(item => {
+            const key = `${item.account_name}-${item.page_id}`;
+            const completionTime = item.completion_time || item.actual_upload_time || item.created_at;
+            const lastUpload = new Date(completionTime);
+
+            if (!cooldownMap.has(key) || lastUpload > cooldownMap.get(key)) {
+                cooldownMap.set(key, lastUpload);
+            }
+        });
+
+        return items.map(item => {
+            const key = `${item.account_name}-${item.page_id}`;
+            const lastUpload = cooldownMap.get(key);
+            const timeSinceLastUpload = now - lastUpload;
+            const cooldownMs = settings.uploadDelay || 30000; // 30 seconds default
+
+            let cooldownRemaining = 0;
+            if (timeSinceLastUpload < cooldownMs && (item.status === 'pending' || item.status === 'scheduled')) {
+                cooldownRemaining = Math.ceil((cooldownMs - timeSinceLastUpload) / 1000); // seconds
+            }
+
+            return {
+                ...item,
+                cooldownRemaining: cooldownRemaining,
+                cooldownMinutes: Math.ceil(cooldownRemaining / 60),
+                canUpload: cooldownRemaining === 0
+            };
+        });
     } catch (error) {
         console.error('Error getting queue items:', error);
         return [];
@@ -172,11 +207,41 @@ function updateQueueItem(itemId, updates) {
         const setParts = [];
         const values = [];
 
-        for (const [key, value] of Object.entries(updates)) {
-            if (key === 'updated_at') continue; // Auto-update
-            setParts.push(`${key} = ?`);
+        // Proper field mapping from camelCase to database columns (snake_case)
+        const fieldMapping = {
+            accountName: 'account_name',
+            pageId: 'page_id',
+            pageName: 'page_name',
+            filePath: 'file_path',
+            fileName: 'file_name',
+            schedule: 'scheduled_time', // Map schedule to scheduled_time
+            scheduledTime: 'scheduled_time',
+            actualUploadTime: 'actual_upload_time',
+            completionTime: 'completion_time',
+            completedAt: 'completion_time', // Map completedAt to completion_time
+            processingTime: 'processing_time',
+            retryCount: 'retry_count', // Map retryCount to retry_count
+            attempts: 'retry_count', // Also map attempts to retry_count
+            errorMessage: 'error_message',
+            lastError: 'error_message', // Map lastError to error_message
+            status: 'status', // Explicit status mapping
+            caption: 'caption', // Explicit caption mapping
+            type: 'type', // Explicit type mapping
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            startedAt: 'started_at',
+            uploadUrl: 'upload_url', // Explicit mapping for upload URL
+            failedAt: 'completion_time', // Map failedAt to completion_time (when fail happens)
+            nextRetry: 'next_retry',
+            processingLogs: 'processing_logs' // Map nextRetry to next_retry
+        };
+
+        Object.entries(updates).forEach(([key, value]) => {
+            if (key === 'updated_at') return; // Auto-update
+            const dbKey = fieldMapping[key] || key.replace(/([A-Z])/g, '_$1').toLowerCase();
+            setParts.push(`${dbKey} = ?`);
             values.push(value);
-        }
+        });
 
         setParts.push('updated_at = ?');
         values.push(new Date().toISOString());

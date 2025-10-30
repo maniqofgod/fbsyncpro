@@ -278,28 +278,58 @@ class QueueProcessor {
         try {
             const stmt = this.db.prepare('SELECT * FROM queue ORDER BY created_at DESC');
             const rows = stmt.all();
+            const now = new Date();
+            const settings = this.getSettings();
+            const cooldownMap = new Map();
+
+            // Calculate last completion time for each account+page combination
+            rows.forEach(row => {
+                const key = `${row.account_name}-${row.page_id}`;
+                const completionTime = row.completion_time || row.actual_upload_time || row.created_at;
+                const lastUpload = new Date(completionTime);
+
+                if (!cooldownMap.has(key) || lastUpload > cooldownMap.get(key)) {
+                    cooldownMap.set(key, lastUpload);
+                }
+            });
 
             // Convert database column names to camelCase for compatibility
-            return rows.map(row => ({
-                id: row.id,
-                account: row.account_name,
-                page: row.page_id,
-                pageName: row.page_name,
-                type: row.type,
-                file: row.file_path,
-                fileName: row.file_name,
-                caption: row.caption,
-                status: row.status,
-                schedule: row.scheduled_time,
-                actualUploadTime: row.actual_upload_time,
-                completionTime: row.completion_time,
-                processingTime: row.processing_time,
-                attempts: row.retry_count,
-                errorMessage: row.error_message,
-                processingLogs: row.processing_logs,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-            }));
+            return rows.map(row => {
+                const key = `${row.account_name}-${row.page_id}`;
+                const lastUpload = cooldownMap.get(key);
+                const timeSinceLastUpload = now - lastUpload;
+                const cooldownMs = settings.uploadDelay || 30000; // 30 seconds default
+
+                let cooldownRemaining = 0;
+                if (timeSinceLastUpload < cooldownMs && (row.status === 'pending' || row.status === 'scheduled')) {
+                    cooldownRemaining = Math.ceil((cooldownMs - timeSinceLastUpload) / 1000); // seconds
+                }
+
+                return {
+                    id: row.id,
+                    account: row.account_name,
+                    page: row.page_id,
+                    pageName: row.page_name,
+                    type: row.type,
+                    file: row.file_path,
+                    fileName: row.file_name,
+                    caption: row.caption,
+                    status: row.status,
+                    schedule: row.scheduled_time,
+                    actualUploadTime: row.actual_upload_time,
+                    completionTime: row.completion_time,
+                    processingTime: row.processing_time,
+                    attempts: row.retry_count,
+                    nextRetry: row.next_retry, // Add nextRetry field conversion
+                    errorMessage: row.error_message,
+                    processingLogs: row.processing_logs,
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at,
+                    cooldownRemaining: cooldownRemaining,
+                    cooldownMinutes: Math.ceil(cooldownRemaining / 60),
+                    canUpload: cooldownRemaining === 0
+                };
+            });
         } catch (error) {
             console.error('Error getting queue:', error);
             return [];
@@ -332,6 +362,7 @@ class QueueProcessor {
                 completionTime: row.completion_time,
                 processingTime: row.processing_time,
                 attempts: row.retry_count,
+                nextRetry: row.next_retry, // Add nextRetry field conversion
                 errorMessage: row.error_message,
                 processingLogs: row.processing_logs,
                 createdAt: row.created_at,
@@ -360,11 +391,12 @@ class QueueProcessor {
             console.log(`📊 Total items in queue: ${queue.length}`);
 
             const pendingItems = queue.filter(item =>
-                item.status === 'pending' &&
-                (!item.schedule || new Date(item.schedule) <= new Date())
+                (item.status === 'pending' || item.status === 'retry') &&
+                (!item.schedule || new Date(item.schedule) <= new Date()) &&
+                (!item.nextRetry || new Date(item.nextRetry) <= new Date())
             );
 
-            console.log(`⏳ Found ${pendingItems.length} pending items to process`);
+            console.log(`⏳ Found ${pendingItems.length} pending/retry items to process`);
 
             if (pendingItems.length === 0) {
                 console.log('ℹ️ No pending items found in queue');
@@ -491,18 +523,22 @@ class QueueProcessor {
             const maxRetries = settings.maxRetries || 3;
 
             if (attempts < maxRetries) {
-                // Retry later
+                // Schedule for retry with explicit retry status
+                const retryDelay = attempts * 60000; // Exponential backoff: 1min, 2min, 3min, etc.
+                const nextRetryTime = new Date(Date.now() + retryDelay);
+
                 await this.updateQueueItem(queueItem.id, {
-                    status: 'pending',
+                    status: 'retry',
                     attempts: attempts,
                     lastError: error.message,
-                    nextRetry: new Date(Date.now() + (attempts * 60000)).toISOString() // Exponential backoff
+                    nextRetry: nextRetryTime.toISOString()
                 });
 
                 return {
                     success: false,
                     error: `Retry ${attempts}/${maxRetries}: ${error.message}`,
-                    willRetry: true
+                    willRetry: true,
+                    nextRetry: nextRetryTime.toISOString()
                 };
             } else {
                 // Max retries reached
@@ -723,10 +759,10 @@ class QueueProcessor {
                     COUNT(*) as total,
                     SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                     SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing,
+                    SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) as retry,
                     SUM(CASE WHEN status = 'scheduled' AND scheduled_time > ? THEN 1 ELSE 0 END) as scheduled,
                     SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-                    SUM(CASE WHEN status = 'pending' AND retry_count > 0 THEN 1 ELSE 0 END) as retry
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
                 FROM queue
             `);
 

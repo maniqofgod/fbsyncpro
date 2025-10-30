@@ -263,17 +263,7 @@
                         </div>
                     </div>
 
-                    <!-- Best Posting Times -->
-                    <div class="analytics-section">
-                        <h3>Best Posting Times</h3>
-                        <div class="best-times" id="best-posting-times">
-                            <div class="empty-state">
-                                <i class="fas fa-clock"></i>
-                                <h3>Belum ada data waktu</h3>
-                                <p>Best posting times akan dianalisis berdasarkan engagement patterns.</p>
-                            </div>
-                        </div>
-                    </div>
+
 
                     <!-- Content Categories -->
                     <div class="analytics-section">
@@ -513,6 +503,102 @@
                     </button>
                     <button type="submit" class="btn-primary" id="save-gemini-btn">
                         <i class="fas fa-save"></i> Simpan API Key
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Edit Queue Item -->
+    <div class="modal" id="edit-queue-modal">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h3 id="edit-queue-modal-title">Edit Item Antrian</h3>
+                <button class="modal-close" id="edit-queue-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="modal-form" id="edit-queue-form">
+                <input type="hidden" id="edit-queue-id">
+
+                <div class="form-group">
+                    <label for="edit-account-select">Pilih Akun Facebook:</label>
+                    <select id="edit-account-select" required>
+                        <option value="">-- Pilih Akun --</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-page-select">Pilih Halaman:</label>
+                    <select id="edit-page-select" required disabled>
+                        <option value="">-- Pilih Halaman --</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-upload-type">Jenis Upload:</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="edit-upload-type" value="reel" id="edit-upload-type-reel">
+                            <span class="radio-custom"></span>
+                            Facebook Reels
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="edit-upload-type" value="post" id="edit-upload-type-post">
+                            <span class="radio-custom"></span>
+                            Video Post
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-caption">Caption:</label>
+                    <div class="caption-input-wrapper">
+                        <textarea id="edit-caption" rows="4" placeholder="Tulis caption untuk video Anda..."></textarea>
+                        <div class="caption-actions">
+                            <select id="edit-caption-language" class="language-select">
+                                <option value="indonesia">Indonesia</option>
+                                <option value="english">English</option>
+                                <option value="sunda">Sunda</option>
+                                <option value="mandarin">Mandarin</option>
+                            </select>
+                            <button type="button" class="btn-secondary" id="edit-generate-caption-btn">
+                                <i class="fas fa-magic"></i> Generate Caption
+                            </button>
+                        </div>
+                    </div>
+                    <small class="form-help">Caption akan ditambahkan ke video saat diupload.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-schedule-time">Jadwal Upload:</label>
+                    <input type="datetime-local" id="edit-schedule-time">
+                    <small class="form-help">Biarkan kosong untuk upload langsung. Kosongkan dan status akan menjadi 'pending'.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-queue-status">Status Item:</label>
+                    <select id="edit-queue-status">
+                        <option value="pending">Pending - Menunggu diproses</option>
+                        <option value="retry">Retry - Menunggu retry otomatis</option>
+                        <option value="scheduled">Scheduled - Dijadwalkan untuk nanti</option>
+                        <option value="processing">Processing - Sedang diproses (jangan ubah)</option>
+                    </select>
+                    <small class="form-help">Status 'pending' untuk eksekusi langsung, 'retry' untuk penjadwalan otomatis, 'scheduled' untuk waktu tertentu.</small>
+                </div>
+
+                <div class="form-group" id="retry-count-group" style="display: none;">
+                    <label for="edit-retry-count">Counter Retry:</label>
+                    <input type="number" id="edit-retry-count" min="0" max="10" value="0">
+                    <small class="form-help">Jumlah percobaan upload sebelumnya. Kosongkan untuk reset ke 0.</small>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-edit-queue-btn">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                    <button type="submit" class="btn-primary" id="save-edit-queue-btn">
+                        <i class="fas fa-save"></i> Simpan Perubahan
                     </button>
                 </div>
             </form>
