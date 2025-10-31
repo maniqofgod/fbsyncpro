@@ -248,6 +248,14 @@
 
                 <!-- Queue Tab -->
                 <div class="tab-pane" id="queue">
+                    <div class="user-filter" id="user-filter" style="display: none;">
+                        <div class="form-group">
+                            <label for="queue-user-select">Filter User:</label>
+                            <select id="queue-user-select" class="user-select">
+                                <option value="">-- Semua User --</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="tab-header">
                         <h2>Status Antrian Upload</h2>
                         <div class="queue-actions">
@@ -518,7 +526,7 @@
                 <div class="tab-pane" id="settings">
                     <div class="tab-header">
                         <h2>Pengaturan Aplikasi</h2>
-                    </div>
+u                    </div>
 
                     <form class="settings-form" id="settings-form">
                         <div class="form-group">

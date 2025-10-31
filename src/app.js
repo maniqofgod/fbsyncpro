@@ -155,6 +155,8 @@ function initializeElements() {
         bulkGenerateCaptionsBtn: document.getElementById('bulk-generate-captions-btn'),
 
         // Queue Management
+        queueFilter: document.getElementById('user-filter'),
+        queueUserSelect: document.getElementById('queue-user-select'),
         queueList: document.getElementById('queue-list'),
         refreshQueueBtn: document.getElementById('refresh-queue-btn'),
         pendingCount: document.getElementById('pending-count'),
@@ -317,6 +319,9 @@ function setupEventListeners() {
 
     // Queue Management
     elements.refreshQueueBtn.addEventListener('click', refreshQueue);
+    if (elements.queueUserSelect) {
+        elements.queueUserSelect.addEventListener('change', () => refreshQueue());
+    }
 
     // Settings
     elements.settingsForm.addEventListener('submit', saveSettings);
@@ -472,6 +477,12 @@ function switchTab(tabName) {
         elements.adminTab.style.display = isAdmin ? 'inline-flex' : 'none';
     }
 
+    // Control analytics tab visibility (admin-only)
+    const analyticsTab = Array.from(elements.navTabs).find(tab => tab.dataset?.tab === 'analytics');
+    if (analyticsTab) {
+        analyticsTab.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
+
     // Control logs tab visibility (admin-only)
     const logsTab = Array.from(elements.navTabs).find(tab => tab.dataset?.tab === 'logs');
     if (logsTab) {
@@ -499,6 +510,7 @@ function updateTabContent(tabName) {
             break;
         case 'queue':
             updateQueueDisplay();
+            loadQueueUsers(); // Load users for queue filter
             break;
         case 'analytics':
             loadAnalyticsData();
@@ -723,23 +735,72 @@ function updateAccountsList() {
         return;
     }
 
-    elements.accountsList.innerHTML = appState.accounts.map(account => `
-        <div class="account-card">
-            <div class="account-info">
-                <h4>${account.name}</h4>
-                <p>Tipe: Personal | Halaman: ${account.pages ? account.pages.length : 0} tersimpan</p>
-                <small>Status: ${account.valid ? 'Valid' : 'Tidak Valid'}</small>
+    elements.accountsList.innerHTML = appState.accounts.map(account => {
+        const pagesCount = account.pages ? account.pages.length : 0;
+        const pageNames = account.pages ? account.pages.map(page => page.name).slice(0, 3).join(', ') : '';
+        const truncatedNames = pagesCount > 3 ? `${pageNames} +${pagesCount - 3} lainnya` : pageNames;
+
+        return `
+            <div class="account-card ${account.valid ? 'valid' : 'invalid'}">
+                <div class="account-header">
+                    <div class="account-name-section">
+                        <i class="fas fa-user-circle account-icon"></i>
+                        <div class="account-title">
+                            <h4>${account.name}</h4>
+                            <small class="account-cookie-name">Cookie: ${account.name}</small>
+                        </div>
+                    </div>
+                    <div class="account-status">
+                        <span class="status-indicator ${account.valid ? 'status-valid' : 'status-invalid'}">
+                            <i class="fas ${account.valid ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i>
+                            ${account.valid ? 'Valid' : 'Tidak Valid'}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="account-details">
+                    <div class="account-info-row">
+                        <div class="info-item">
+                            <i class="fas fa-globe"></i>
+                            <span>Tipe: ${account.type === 'personal' ? 'Personal' : 'Page'}</span>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-list"></i>
+                            <span>Halaman: ${pagesCount} tersimpan</span>
+                        </div>
+                    </div>
+
+                    ${pagesCount > 0 ? `
+                        <div class="account-pages">
+                            <div class="pages-header">
+                                <i class="fas fa-flag"></i>
+                                <span>List Halaman:</span>
+                            </div>
+                            <div class="pages-list">
+                                ${account.pages.map(page => `
+                                    <span class="page-tag" title="${page.name}">
+                                        <i class="fab fa-facebook-square"></i>
+                                        ${page.name}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="account-actions">
+                    <button class="btn-secondary" onclick="editAccount('${account.name}')" title="Edit Akun">
+                        <i class="fas fa-edit"></i>
+                        Edit
+                    </button>
+                    <button class="btn-danger" onclick="deleteAccount('${account.name}')" title="Hapus Akun">
+                        <i class="fas fa-trash"></i>
+                        Hapus
+                    </button>
+                </div>
             </div>
-            <div class="account-actions">
-                <button class="btn-secondary" onclick="editAccount('${account.name}')">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn-danger" onclick="deleteAccount('${account.name}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
     // Update account select in upload form
     updateAccountSelect();
@@ -859,11 +920,20 @@ function toggleUploadMode() {
         elements.videoFile.value = '';
         elements.caption.value = '';
         elements.scheduleTime.value = '';
+        // Set default start time for bulk uploads
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        elements.bulkStartTime.value = `${year}-${month}-${day}T${hours}:${minutes}`;
     } else {
         document.getElementById('single-upload-interface').style.display = 'block';
         document.getElementById('bulk-upload-interface').style.display = 'none';
         // Clear bulk upload data
         elements.bulkFiles.value = '';
+        elements.bulkStartTime.value = '';
         // Reset bulk files list
         const bulkFilesList = elements.bulkFilesList;
         bulkFilesList.innerHTML = '';
@@ -1539,14 +1609,60 @@ async function clearQueue() {
 
 async function refreshQueue() {
     try {
+        // Get selected user filter
+        const selectedUserId = elements.queueUserSelect ? elements.queueUserSelect.value : '';
+
+        // Build URL with user filter if admin and user selected
+        let url = `${API_BASE}/api/queue`;
+        if (selectedUserId && (appState.user?.role === 'admin' || appState.user?.username === 'admin')) {
+            url += `?userId=${selectedUserId}`;
+        }
+
         // Refresh queue data
-        const queueResponse = await fetch(`${API_BASE}/api/queue`);
+        const queueResponse = await fetch(url);
         const newQueue = await queueResponse.json();
         appState.uploadQueue = newQueue;
         updateQueueDisplay();
         showToast('Status antrian diperbaharui', 'success');
     } catch (error) {
         showToast(`Gagal memperbaharui status antrian: ${error.message}`, 'error');
+    }
+}
+
+// Load users for filter dropdown (admin only)
+async function loadQueueUsers() {
+    const isAdmin = appState.user?.role === 'admin' || appState.user?.username === 'admin';
+
+    if (!isAdmin) {
+        // Hide user filter for non-admin users
+        if (elements.queueFilter) {
+            elements.queueFilter.style.display = 'none';
+        }
+        return;
+    }
+
+    // Show user filter for admin users
+    if (elements.queueFilter) {
+        elements.queueFilter.style.display = 'block';
+    }
+
+    try {
+        const usersResponse = await fetch(`${API_BASE}/api/admin/users`);
+        const usersResult = await usersResponse.json();
+
+        if (usersResult.success && usersResult.users) {
+            // Populate user dropdown
+            const userSelect = elements.queueUserSelect;
+            if (userSelect) {
+                userSelect.innerHTML = '<option value="">-- Semua User --</option>' +
+                    usersResult.users.map(user => `<option value="${user.id}">${user.displayName} (${user.username})</option>`).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading users for queue filter:', error);
+        if (elements.queueFilter) {
+            elements.queueFilter.style.display = 'none';
+        }
     }
 }
 
@@ -2465,9 +2581,23 @@ function openEditQueueModal(item) {
 
     // Set schedule time
     if (item.schedule) {
-        elements.editScheduleTime.value = item.schedule.replace('T', ' ').substring(0, 16);
+        // Convert ISO string to datetime-local format (YYYY-MM-DDTHH:MM)
+        const scheduleDate = new Date(item.schedule);
+        const year = scheduleDate.getFullYear();
+        const month = String(scheduleDate.getMonth() + 1).padStart(2, '0');
+        const day = String(scheduleDate.getDate()).padStart(2, '0');
+        const hours = String(scheduleDate.getHours()).padStart(2, '0');
+        const minutes = String(scheduleDate.getMinutes()).padStart(2, '0');
+        elements.editScheduleTime.value = `${year}-${month}-${day}T${hours}:${minutes}`;
     } else {
-        elements.editScheduleTime.value = '';
+        // Set default to current date/time in YYYY-MM-DDTHH:MM format
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        elements.editScheduleTime.value = `${year}-${month}-${day}T${hours}:${minutes}`;
     }
 
     // Set status
@@ -2714,7 +2844,7 @@ function updateScreenshotsGallery(screenshots) {
                 <h4>${screenshot.step || 'Screenshot'}</h4>
                 <small>${new Date(screenshot.timestamp).toLocaleString()}</small>
             </div>
-            <img src="${API_BASE}/api/debug/screenshots/${screenshot.filename}"
+            <img src="${API_BASE}/api/debug/screenshots/${screenshot.filename}?t=${Date.now()}"
                  alt="${screenshot.step}"
                  onclick="openScreenshotModal('${screenshot.filename}', '${screenshot.step || 'Screenshot'}')"
                  style="max-width: 100%; cursor: pointer; border-radius: 8px;">

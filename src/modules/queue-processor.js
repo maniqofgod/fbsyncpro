@@ -38,7 +38,11 @@ class QueueProcessor {
             this.db.exec(`
                 CREATE TABLE IF NOT EXISTS queue (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT,                    -- User who owns this queue item
                     account_name TEXT,
+                    account_type TEXT DEFAULT 'personal', -- personal/business
+                    cookie TEXT,                     -- Encrypted cookie for the account
+                    pages_data TEXT,                 -- JSON string of available pages
                     page_id TEXT,
                     page_name TEXT,
                     type TEXT,
@@ -92,7 +96,7 @@ class QueueProcessor {
     /**
      * Tambahkan item ke antrian
      */
-    async addToQueue(queueItem) {
+    async addToQueue(queueItem, userId = null) {
         try {
             // Generate ID unik
             queueItem.id = this.generateId();
@@ -112,14 +116,19 @@ class QueueProcessor {
 
             const stmt = this.db.prepare(`
                 INSERT INTO queue (
-                    id, account_name, page_id, page_name, type, file_path, file_name,
+                    id, user_id, account_name, account_type, cookie, pages_data,
+                    page_id, page_name, type, file_path, file_name,
                     caption, status, scheduled_time, processing_logs, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
 
             stmt.run(
                 queueItem.id,
+                userId, // Include user_id
                 queueItem.account,
+                queueItem.accountType || 'personal',
+                queueItem.cookie || null,
+                queueItem.pagesData || null,
                 queueItem.page,
                 queueItem.pageName || '',
                 queueItem.type,
@@ -307,6 +316,7 @@ class QueueProcessor {
 
                 return {
                     id: row.id,
+                    userId: row.user_id, // Include userId here as well
                     account: row.account_name,
                     page: row.page_id,
                     pageName: row.page_name,
@@ -337,6 +347,72 @@ class QueueProcessor {
     }
 
     /**
+     * Ambil semua item di antrian untuk user tertentu
+     */
+    getQueueForUser(userId) {
+        try {
+            const stmt = this.db.prepare('SELECT * FROM queue WHERE user_id = ? ORDER BY created_at DESC');
+            const rows = stmt.all(userId);
+            const now = new Date();
+            const settings = this.getSettings();
+            const cooldownMap = new Map();
+
+            // Calculate last completion time for each account+page combination
+            rows.forEach(row => {
+                const key = `${row.account_name}-${row.page_id}`;
+                const completionTime = row.completion_time || row.actual_upload_time || row.created_at;
+                const lastUpload = new Date(completionTime);
+
+                if (!cooldownMap.has(key) || lastUpload > cooldownMap.get(key)) {
+                    cooldownMap.set(key, lastUpload);
+                }
+            });
+
+            // Convert database column names to camelCase for compatibility
+            return rows.map(row => {
+                const key = `${row.account_name}-${row.page_id}`;
+                const lastUpload = cooldownMap.get(key);
+                const timeSinceLastUpload = now - lastUpload;
+                const cooldownMs = settings.uploadDelay || 30000; // 30 seconds default
+
+                let cooldownRemaining = 0;
+                if (timeSinceLastUpload < cooldownMs && (row.status === 'pending' || row.status === 'scheduled')) {
+                    cooldownRemaining = Math.ceil((cooldownMs - timeSinceLastUpload) / 1000); // seconds
+                }
+
+                return {
+                    id: row.id,
+                    userId: row.user_id, // Include userId here as well
+                    account: row.account_name,
+                    page: row.page_id,
+                    pageName: row.page_name,
+                    type: row.type,
+                    file: row.file_path,
+                    fileName: row.file_name,
+                    caption: row.caption,
+                    status: row.status,
+                    schedule: row.scheduled_time,
+                    actualUploadTime: row.actual_upload_time,
+                    completionTime: row.completion_time,
+                    processingTime: row.processing_time,
+                    attempts: row.retry_count,
+                    nextRetry: row.next_retry, // Add nextRetry field conversion
+                    errorMessage: row.error_message,
+                    processingLogs: row.processing_logs,
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at,
+                    cooldownRemaining: cooldownRemaining,
+                    cooldownMinutes: Math.ceil(cooldownRemaining / 60),
+                    canUpload: cooldownRemaining === 0
+                };
+            });
+        } catch (error) {
+            console.error('Error getting queue for user:', error);
+            return [];
+        }
+    }
+
+    /**
      * Ambil item berdasarkan ID
      */
     getQueueItem(itemId) {
@@ -349,7 +425,11 @@ class QueueProcessor {
             // Convert database column names to camelCase for compatibility
             return {
                 id: row.id,
+                userId: row.user_id, // Make sure userId is included
                 account: row.account_name,
+                accountType: row.account_type,
+                cookie: row.cookie,
+                pagesData: row.pages_data,
                 page: row.page_id,
                 pageName: row.page_name,
                 type: row.type,
@@ -377,7 +457,7 @@ class QueueProcessor {
     /**
      * Proses upload langsung (tanpa schedule)
      */
-    async processImmediateUploads() {
+    async processImmediateUploads(userId = null) {
         if (this.isProcessing) {
             console.log('⚠️ Queue processing already running, skipping...');
             return;
@@ -387,7 +467,7 @@ class QueueProcessor {
             this.isProcessing = true;
             console.log('🚀 Starting immediate queue processing...');
 
-            const queue = this.getQueue();
+            const queue = userId ? this.getQueueForUser(userId) : this.getQueue();
             console.log(`📊 Total items in queue: ${queue.length}`);
 
             const pendingItems = queue.filter(item =>
@@ -401,10 +481,6 @@ class QueueProcessor {
             if (pendingItems.length === 0) {
                 console.log('ℹ️ No pending items found in queue');
                 return;
-            } else {
-                console.log(`🔄 Running scheduled queue processing...`);
-                console.log(`⚠️ Queue processing already running, skipping...`);
-                console.log(`✅ Scheduled queue processing completed`);
             }
 
             for (const item of pendingItems) {
@@ -468,16 +544,113 @@ class QueueProcessor {
             // Track upload start di analytics
             await this.trackUploadStart(queueItem);
 
-            // Get account data
-            const AccountManager = require('./account-manager');
-            const accountManager = new AccountManager();
-            const account = accountManager.getAccount(queueItem.account);
+            // Create account data from queue item (stored when queue was created)
+            const accountManager = require('./account-manager');
+            let account;
 
-            if (!account || !account.valid) {
-                throw new Error(`Akun ${queueItem.account} tidak valid atau tidak ditemukan`);
+            if (queueItem.cookie) {
+                // Use account data stored in queue item
+                try {
+                    account = {
+                        name: queueItem.account,
+                        type: queueItem.accountType || 'personal',
+                        cookie: queueItem.cookie, // Already encrypted, AccountManager.decrypt will handle it
+                        valid: true,
+                        pages: JSON.parse(queueItem.pagesData || '[]')
+                    };
+                } catch (error) {
+                    console.error('Error parsing account data from queue:', error);
+                    throw new Error(`Data akun ${queueItem.account} tidak valid`);
+                }
+            } else {
+                // Try to get account from database first
+                console.log(`🔍 Queue item missing cookie, trying database lookup for user ${queueItem.userId}, account ${queueItem.account}`);
+                account = this.getAccountFromDatabase(queueItem.userId, queueItem.account);
+
+                if (account && account.valid && account.cookie) {
+                    console.log(`✅ Found account "${queueItem.account}" in database, recreating queue data`);
+                    // Recreate the account object as if it was stored in queue
+                    account = {
+                        name: account.name,
+                        type: account.type,
+                        cookie: account.cookie, // encrypted, will be decrypted later
+                        valid: true,
+                        pages: account.pages
+                    };
+                } else {
+                    // Fallback to old method (for backward compatibility)
+                    console.log(`❌ Account not found in database, falling back to electron-store`);
+
+                    const accountManagerInstance = new accountManager();
+
+                    // Log all available accounts for debugging
+                    const allAccounts = accountManagerInstance.getAllAccounts();
+                    console.log(`🔍 Available accounts in electron-store: ${allAccounts.map(acc => acc.name).join(', ')}`);
+                    console.log(`🔍 Looking for account: "${queueItem.account}"`);
+
+                    account = accountManagerInstance.getAccount(queueItem.account);
+
+                    if (!account || !account.valid) {
+                        // Try to find similar account names
+                        const similarAccounts = allAccounts.filter(acc =>
+                            acc.name.toLowerCase().includes(queueItem.account.toLowerCase()) ||
+                            queueItem.account.toLowerCase().includes(acc.name.toLowerCase())
+                        );
+
+                        if (similarAccounts.length > 0) {
+                            console.log(`💡 Found similar accounts: ${similarAccounts.map(acc => acc.name).join(', ')}`);
+                            // Use the first similar account
+                            account = similarAccounts[0];
+                            if (account.valid) {
+                                console.log(`✅ Using similar account: ${account.name}`);
+                            }
+                        }
+
+                        if (!account || !account.valid) {
+                            console.log(`❌ No valid account found for "${queueItem.account}"`);
+
+                            // Try to query database without user filter for legacy support
+                            if (queueItem.userId === undefined) {
+                                console.log(`🔍 Trying database lookup without user filter for legacy queue item`);
+                                // First try with is_valid = 1
+                                let stmt = this.db.prepare('SELECT * FROM facebook_accounts WHERE name = ? AND is_valid = 1 LIMIT 1');
+                                let dbAccount = stmt.get(queueItem.account);
+
+                                if (!dbAccount) {
+                                    // If no valid account, try any account with that name (assume user knows it's valid)
+                                    console.log(`🔄 No valid account found, trying any account with name "${queueItem.account}"`);
+                                    stmt = this.db.prepare('SELECT * FROM facebook_accounts WHERE name = ? LIMIT 1');
+                                    dbAccount = stmt.get(queueItem.account);
+                                }
+
+                                if (dbAccount) {
+                                    console.log(`✅ Found account in database without user filter (valid: ${dbAccount.is_valid === 1})`);
+                                    account = {
+                                        name: dbAccount.name,
+                                        type: dbAccount.type,
+                                        cookie: dbAccount.cookie,
+                                        pages: dbAccount.pages_data ? JSON.parse(dbAccount.pages_data) : [],
+                                        valid: dbAccount.is_valid === 1 || true, // Assume valid if user created the queue item
+                                        userId: dbAccount.user_id
+                                    };
+                                }
+                            }
+
+                            if (!account || !account.valid) {
+                                throw new Error(`Akun ${queueItem.account} tidak valid atau tidak ditemukan dalam penyimpanan lokal`);
+                            }
+                        }
+                    }
+                }
             }
 
-            console.log(`✅ Account found: ${account.name}, Valid: ${account.valid}`);
+            // Decrypt cookie for use
+            if (account.cookie) {
+                const tempAccountManager = new accountManager();
+                account.cookie = tempAccountManager.decrypt(account.cookie);
+            }
+
+            console.log(`✅ Account ready: ${account.name}, Type: ${account.type}, Valid: ${account.valid}`);
             console.log(`📄 Pages available: ${account.pages ? account.pages.length : 0}`);
 
             // Process upload berdasarkan tipe
@@ -689,7 +862,7 @@ class QueueProcessor {
     /**
      * Mulai pemrosesan antrian
      */
-    async startQueue() {
+    async startQueue(userId = null) {
         try {
             if (this.isProcessing) {
                 return { success: false, error: 'Antrian sedang berjalan' };
@@ -697,12 +870,12 @@ class QueueProcessor {
 
             this.isProcessing = true;
 
-            // Process all pending items
-            await this.processImmediateUploads();
+            // Process all pending items for specific user if provided
+            await this.processImmediateUploads(userId);
 
             return {
                 success: true,
-                message: 'Antrian dimulai'
+                message: userId ? `Antrian dimulai untuk user ${userId}` : 'Antrian dimulai'
             };
         } catch (error) {
             this.isProcessing = false;
@@ -1013,16 +1186,23 @@ class QueueProcessor {
             const AnalyticsManager = require('./analytics-manager');
             const analyticsManager = new AnalyticsManager();
 
-            // Get account data untuk page info
-            const AccountManager = require('./account-manager');
-            const accountManager = new AccountManager();
-            const account = accountManager.getAccount(queueItem.account);
+            // Get account data untuk page info from queue item data
+            let pageName = queueItem.pageName || queueItem.page;
+            try {
+                const pages = JSON.parse(queueItem.pagesData || '[]');
+                const pageInfo = pages.find(p => p.id === queueItem.page);
+                if (pageInfo) {
+                    pageName = pageInfo.name;
+                }
+            } catch (error) {
+                // Ignore parsing error, use default pageName
+            }
 
             const uploadData = {
                 id: queueItem.id,
                 accountName: queueItem.account,
                 pageId: queueItem.page,
-                pageName: account?.pages?.find(p => p.id === queueItem.page)?.name || queueItem.page,
+                pageName: pageName,
                 type: queueItem.type,
                 fileName: queueItem.file ? queueItem.file.split(/[/\\]/).pop() : 'unknown',
                 caption: queueItem.caption,
@@ -1171,6 +1351,53 @@ class QueueProcessor {
             await this.updateQueueItem(itemId, { processingLogs: updatedLogs });
         } catch (error) {
             console.error('Error adding processing log:', error);
+        }
+    }
+
+    /**
+     * Get account from database facebook_accounts table
+     */
+    getAccountFromDatabase(userId, accountName) {
+        try {
+            console.log(`🔍 Looking for account "${accountName}" for user ${userId} in database`);
+
+            // Ensure facebook_accounts table exists (for compatibility with server.js)
+            this.db.exec(`
+                CREATE TABLE IF NOT EXISTS facebook_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT DEFAULT 'personal',
+                    cookie TEXT,
+                    pages_data TEXT DEFAULT '[]',
+                    is_valid INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, name)
+                )
+            `);
+
+            const stmt = this.db.prepare('SELECT * FROM facebook_accounts WHERE user_id = ? AND name = ?');
+            const account = stmt.get(userId, accountName);
+
+            if (account) {
+                console.log(`✅ Found account "${accountName}" in database`);
+                return {
+                    id: account.id,
+                    name: account.name,
+                    type: account.type,
+                    cookie: account.cookie,
+                    pages: account.pages_data ? JSON.parse(account.pages_data) : [],
+                    valid: account.is_valid === 1,
+                    userId: account.user_id
+                };
+            }
+
+            console.log(`❌ Account "${accountName}" not found in database for user ${userId}`);
+            return null;
+        } catch (error) {
+            console.error('Error getting account from database:', error);
+            return null;
         }
     }
 }

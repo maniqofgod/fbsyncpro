@@ -201,16 +201,20 @@ function addQueueItem(item, userId) {
     try {
         const stmt = db.prepare(`
             INSERT INTO queue (
-                id, user_id, account_name, page_id, page_name, type, file_path, file_name,
+                id, user_id, account_name, account_type, cookie, pages_data,
+                page_id, page_name, type, file_path, file_name,
                 caption, status, scheduled_time, actual_upload_time, completion_time,
                 processing_time, retry_count, error_message, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         stmt.run(
             item.id,
             userId,
             item.account,
+            item.accountType || 'personal',
+            item.cookie || null,
+            item.pagesData || null,
             item.page,
             item.pageName || '',
             item.type,
@@ -642,11 +646,15 @@ app.post('/api/accounts', async (req, res) => {
             }
         }
 
+        // Getting user_id by API key or session
+        const accountManager = require('./src/modules/account-manager');
+        const accountMgr = new accountManager();
+
         // Insert new account
         const result = db.prepare(`
             INSERT INTO facebook_accounts (user_id, name, type, cookie, pages_data, is_valid, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(userId, name, type || 'personal', cookie, pagesData, isValid, new Date().toISOString(), new Date().toISOString());
+        `).run(userId, name, type || 'personal', cookie ? accountMgr.encrypt(cookie) : null, pagesData, isValid, new Date().toISOString(), new Date().toISOString());
 
         if (result.changes > 0) {
             res.json({
@@ -765,9 +773,19 @@ app.post('/api/accounts/test', async (req, res) => {
 // Queue Management Routes (Per User)
 app.get('/api/queue', (req, res) => {
     try {
-        const userId = req.user.id;
-        // Get queue items for this user
-        const userQueue = getQueueItems(userId);
+        const isAdmin = req.user.role === 'admin' || req.user.username === 'admin';
+        const requestedUserId = req.query.userId; // Admin can filter by userId
+
+        // Determine which user's queue to fetch
+        let targetUserId = req.user.id; // Default to current user
+
+        // Admin can view other users' queues if userId is provided
+        if (isAdmin && requestedUserId && requestedUserId !== 'null' && requestedUserId !== 'undefined') {
+            targetUserId = requestedUserId;
+        }
+
+        // Get queue items for the target user
+        const userQueue = getQueueItems(targetUserId);
 
         // Transform for frontend compatibility
         const queue = userQueue.map(item => ({
@@ -787,7 +805,8 @@ app.get('/api/queue', (req, res) => {
             attempts: item.retry_count,
             errorMessage: item.error_message,
             createdAt: item.created_at,
-            updatedAt: item.updated_at
+            updatedAt: item.updated_at,
+            userId: item.user_id // Include userId for admin view
         }));
 
         res.json(queue);
@@ -801,9 +820,25 @@ app.post('/api/queue', (req, res) => {
     try {
         const userId = req.user.id;
         const formData = req.body;
+
+        // Get account information including cookie
+        const account = db.prepare('SELECT id, name, cookie, type, pages_data FROM facebook_accounts WHERE user_id = ? AND name = ? AND is_valid = 1')
+            .get(userId, formData.account);
+
+        if (!account) {
+            return res.status(400).json({ success: false, error: `Account "${formData.account}" not found or invalid` });
+        }
+
+        if (!account.cookie) {
+            return res.status(400).json({ success: false, error: `Account "${formData.account}" has no valid cookie` });
+        }
+
         const queueItem = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2),
             account: formData.account,
+            accountType: account.type,
+            cookie: account.cookie, // Include encrypted cookie
+            pagesData: account.pages_data, // Include pages data
             page: formData.page,
             pageName: formData.pageName,
             type: formData.type,
@@ -893,8 +928,8 @@ app.post('/api/queue/start', async (req, res) => {
         const currentQueue = getQueueItems(userId);
         console.log(`📊 Current queue status for user ${userId}: ${currentQueue.length} items`);
 
-        // Start queue processing
-        const result = await globalQueueProcessor.startQueue();
+        // Start queue processing for this specific user
+        const result = await globalQueueProcessor.startQueue(userId);
 
         if (result.success) {
             console.log('✅ Queue processing started successfully');
@@ -919,19 +954,19 @@ app.post('/api/queue/process-manually', async (req, res) => {
             return res.status(500).json({ success: false, error: 'Queue processor not available' });
         }
 
-        // Process immediate uploads manually
-        await globalQueueProcessor.processImmediateUploads();
+        // Process immediate uploads manually for this user specifically
+        await globalQueueProcessor.processImmediateUploads(userId);
 
         // Get updated queue status for this user
         const queue = getQueueItems(userId);
         const stats = globalQueueProcessor.getQueueStats();
 
-        console.log(`📊 Manual processing completed. Queue stats:`, stats);
+        console.log(`📊 Manual processing completed for user ${userId}. Queue stats:`, stats);
 
         res.json({
             success: true,
             stats: stats,
-            message: `Processed ${stats.total} items, ${stats.completed} completed, ${stats.failed} failed`
+            message: `Processed ${queue.filter(item => item.status === 'completed').length} items for this user`
         });
     } catch (error) {
         console.error('❌ Error in manual queue processing:', error);
@@ -1349,11 +1384,11 @@ cron.schedule('*/30 * * * * *', async () => {
     try {
         console.log('🔄 Running scheduled queue processing...');
 
-        // Process scheduled uploads
+        // Process scheduled uploads only - don't process immediate uploads in background
+        // as they need authentication context
         await globalQueueProcessor.processScheduledUploads();
 
-        // Process immediate uploads
-        await globalQueueProcessor.processImmediateUploads();
+        // Note: immediate uploads (pending status) are only processed via authenticated API calls
 
         console.log('✅ Scheduled queue processing completed');
     } catch (error) {
@@ -1674,7 +1709,10 @@ app.get('/api/debug/screenshots/:filename', (req, res) => {
 
         // Set appropriate headers and send file
         res.setHeader('Content-Type', 'image/png');
-        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+        // Disable caching for debug screenshots to ensure images update immediately after changes
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
 
         res.sendFile(filePath);
     } catch (error) {
