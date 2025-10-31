@@ -109,38 +109,109 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="video-file">File Video:</label>
-                            <div class="file-input-wrapper">
-                                <input type="text" id="video-file" readonly placeholder="Pilih file video...">
-                                <button type="button" class="btn-secondary" id="select-file-btn">
-                                    <i class="fas fa-folder-open"></i> Pilih File
-                                </button>
+                            <label for="upload-mode">Mode Upload:</label>
+                            <div class="radio-group">
+                                <label class="radio-label">
+                                    <input type="radio" name="upload-mode" value="single" checked>
+                                    <span class="radio-custom"></span>
+                                    Single Upload
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="upload-mode" value="bulk">
+                                    <span class="radio-custom"></span>
+                                    Bulk Upload
+                                </label>
                             </div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="caption">Caption:</label>
-                            <div class="caption-input-wrapper">
-                                <textarea id="caption" rows="4" placeholder="Tulis caption untuk video Anda..."></textarea>
-                                <div class="caption-actions">
-                                    <select id="caption-language" class="language-select">
+                        <!-- Single Upload Interface -->
+                        <div id="single-upload-interface">
+                            <div class="form-group">
+                                <label for="video-file">File Video:</label>
+                                <div class="file-input-wrapper">
+                                    <input type="text" id="video-file" readonly placeholder="Pilih file video...">
+                                    <button type="button" class="btn-secondary" id="select-file-btn">
+                                        <i class="fas fa-folder-open"></i> Pilih File
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="caption">Caption:</label>
+                                <div class="caption-input-wrapper">
+                                    <textarea id="caption" rows="4" placeholder="Tulis caption untuk video Anda..."></textarea>
+                                    <div class="caption-actions">
+                                        <select id="caption-language" class="language-select">
+                                            <option value="indonesia">Indonesia</option>
+                                            <option value="english">English</option>
+                                            <option value="sunda">Sunda</option>
+                                            <option value="mandarin">Mandarin</option>
+                                        </select>
+                                        <button type="button" class="btn-secondary" id="generate-caption-btn">
+                                            <i class="fas fa-magic"></i> Generate Caption
+                                        </button>
+                                    </div>
+                                </div>
+                                <small class="form-help">Caption akan ditambahkan ke video saat diupload. Gunakan Generate Caption untuk membuat caption otomatis berdasarkan nama file.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="schedule-time">Jadwal Upload:</label>
+                                <input type="datetime-local" id="schedule-time">
+                                <small class="form-help">Biarkan kosong untuk upload langsung.</small>
+                            </div>
+                        </div>
+
+                        <!-- Bulk Upload Interface -->
+                        <div id="bulk-upload-interface" style="display: none;">
+                            <div class="form-group">
+                                <label for="bulk-files">File Video (Bulk):</label>
+                                <div class="file-input-wrapper">
+                                    <input type="text" id="bulk-files" readonly placeholder="Pilih multiple file video...">
+                                    <button type="button" class="btn-secondary" id="select-bulk-files-btn">
+                                        <i class="fas fa-folder-open"></i> Pilih File
+                                    </button>
+                                </div>
+                                <div id="bulk-files-list" class="bulk-files-list">
+                                    <!-- Selected files will be listed here -->
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="bulk-caption-language">Bahasa Caption:</label>
+                                <div class="caption-input-wrapper">
+                                    <select id="bulk-caption-language" class="language-select">
                                         <option value="indonesia">Indonesia</option>
                                         <option value="english">English</option>
                                         <option value="sunda">Sunda</option>
                                         <option value="mandarin">Mandarin</option>
                                     </select>
-                                    <button type="button" class="btn-secondary" id="generate-caption-btn">
+                                    <button type="button" class="btn-secondary" id="bulk-generate-captions-btn">
                                         <i class="fas fa-magic"></i> Generate Caption
                                     </button>
                                 </div>
+                                <small class="form-help">Caption akan digenerate otomatis untuk setiap video berdasarkan nama file.</small>
                             </div>
-                            <small class="form-help">Caption akan ditambahkan ke video saat diupload. Gunakan Generate Caption untuk membuat caption otomatis berdasarkan nama file.</small>
-                        </div>
 
-                        <div class="form-group">
-                            <label for="schedule-time">Jadwal Upload:</label>
-                            <input type="datetime-local" id="schedule-time">
-                            <small class="form-help">Biarkan kosong untuk upload langsung.</small>
+                            <div class="form-group">
+                                <label for="bulk-interval">Interval Upload:</label>
+                                <select id="bulk-interval">
+                                    <option value="5">Setiap 5 menit</option>
+                                    <option value="15">Setiap 15 menit</option>
+                                    <option value="30">Setiap 30 menit</option>
+                                    <option value="60">Setiap 1 jam</option>
+                                    <option value="180">Setiap 3 jam</option>
+                                    <option value="360">Setiap 6 jam</option>
+                                    <option value="720">Setiap 12 jam</option>
+                                </select>
+                                <small class="form-help">Interval waktu antara upload setiap video dalam bulk upload.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="bulk-start-time">Waktu Mulai Upload:</label>
+                                <input type="datetime-local" id="bulk-start-time">
+                                <small class="form-help">Biarkan kosong untuk mulai upload sekarang. Video pertama akan diupload pada waktu yang dipilih.</small>
+                            </div>
                         </div>
 
                         <div class="form-actions">

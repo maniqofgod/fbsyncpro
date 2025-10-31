@@ -60,12 +60,22 @@ function initializeElements() {
         uploadForm: document.getElementById('upload-form'),
         accountSelect: document.getElementById('account-select'),
         pageSelect: document.getElementById('page-select'),
+        uploadMode: document.querySelectorAll('input[name="upload-mode"]'),
         uploadType: document.querySelectorAll('input[name="upload-type"]'),
         videoFile: document.getElementById('video-file'),
         selectFileBtn: document.getElementById('select-file-btn'),
         caption: document.getElementById('caption'),
         scheduleTime: document.getElementById('schedule-time'),
         addToQueueBtn: document.getElementById('add-to-queue-btn'),
+
+        // Bulk Upload Elements
+        bulkFiles: document.getElementById('bulk-files'),
+        selectBulkFilesBtn: document.getElementById('select-bulk-files-btn'),
+        bulkFilesList: document.getElementById('bulk-files-list'),
+        bulkCaptionLanguage: document.getElementById('bulk-caption-language'),
+        bulkInterval: document.getElementById('bulk-interval'),
+        bulkStartTime: document.getElementById('bulk-start-time'),
+        bulkGenerateCaptionsBtn: document.getElementById('bulk-generate-captions-btn'),
 
         // Queue Management
         queueList: document.getElementById('queue-list'),
@@ -149,15 +159,23 @@ function setupEventListeners() {
     elements.testCookieBtn.addEventListener('click', testCookie);
 
     // Upload Form - will be modified for web browser file upload
+    elements.uploadMode.forEach(radio => radio.addEventListener('change', toggleUploadMode));
     elements.selectFileBtn.addEventListener('click', selectVideoFile);
+    elements.selectBulkFilesBtn.addEventListener('click', selectBulkVideoFiles);
     elements.accountSelect.addEventListener('change', () => {
         updatePageSelect();
         updateSendButtonState();
     });
     elements.pageSelect.addEventListener('change', updateSendButtonState);
     elements.videoFile.addEventListener('input', updateSendButtonState);
+    elements.bulkFiles.addEventListener('input', updateSendButtonState);
+    elements.bulkInterval.addEventListener('change', updateSendButtonState);
+    elements.bulkStartTime.addEventListener('input', updateSendButtonState);
     elements.uploadForm.addEventListener('submit', addToQueue);
     elements.addToQueueBtn.addEventListener('click', addToQueue);
+    if (elements.bulkGenerateCaptionsBtn) {
+        elements.bulkGenerateCaptionsBtn.addEventListener('click', generateBulkCaptions);
+    }
 
     // Queue Management
     elements.refreshQueueBtn.addEventListener('click', refreshQueue);
@@ -611,9 +629,256 @@ async function selectVideoFile() {
     }
 }
 
+// Toggle between single and bulk upload modes
+function toggleUploadMode() {
+    const isBulkMode = document.querySelector('input[name="upload-mode"]:checked').value === 'bulk';
+
+    if (isBulkMode) {
+        document.getElementById('single-upload-interface').style.display = 'none';
+        document.getElementById('bulk-upload-interface').style.display = 'block';
+        // Clear single upload data
+        elements.videoFile.value = '';
+        elements.caption.value = '';
+        elements.scheduleTime.value = '';
+    } else {
+        document.getElementById('single-upload-interface').style.display = 'block';
+        document.getElementById('bulk-upload-interface').style.display = 'none';
+        // Clear bulk upload data
+        elements.bulkFiles.value = '';
+        // Reset bulk files list
+        const bulkFilesList = elements.bulkFilesList;
+        bulkFilesList.innerHTML = '';
+        // Clear stored bulk files data
+        bulkFilesList._uploadedFiles = [];
+        bulkFilesList._selectedFiles = [];
+    }
+
+    updateSendButtonState();
+}
+
+// Bulk file selection
+async function selectBulkVideoFiles() {
+    try {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'video/*';
+        fileInput.multiple = true;
+        fileInput.style.display = 'none';
+
+        fileInput.onchange = async (event) => {
+            const files = Array.from(event.target.files);
+            if (files.length === 0) {
+                document.body.removeChild(fileInput);
+                return;
+            }
+
+            showToast(`Mengupload ${files.length} file...`, 'info');
+
+            // Upload all files to server
+            const uploadedFiles = [];
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const file of files) {
+                try {
+                    const formData = new FormData();
+                    formData.append('video', file);
+
+                    const uploadResponse = await fetch(`${API_BASE}/api/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const uploadResult = await uploadResponse.json();
+
+                    if (uploadResult.success) {
+                        uploadedFiles.push({
+                            file: uploadResult.filePath,
+                            fileName: file.name,
+                            selectedFile: file
+                        });
+                        successCount++;
+                    } else {
+                        console.error(`Upload failed for ${file.name}:`, uploadResult.error);
+                        errorCount++;
+                    }
+                } catch (uploadError) {
+                    console.error(`Upload error for ${file.name}:`, uploadError);
+                    errorCount++;
+                }
+            }
+
+            if (uploadedFiles.length > 0) {
+                // Store uploaded files data
+                elements.bulkFilesList._uploadedFiles = uploadedFiles;
+                elements.bulkFilesList._selectedFiles = uploadedFiles.map(f => f.selectedFile);
+
+                // Update UI
+                elements.bulkFiles.value = `${uploadedFiles.length} file dipilih`;
+                updateBulkFilesList(uploadedFiles);
+
+                if (successCount > 0) {
+                    showToast(`${successCount} file berhasil diupload`, 'success');
+                }
+                if (errorCount > 0) {
+                    showToast(`${errorCount} file gagal diupload`, 'warning');
+                }
+
+                updateSendButtonState();
+            } else {
+                showToast('Tidak ada file yang berhasil diupload', 'error');
+                elements.bulkFiles.value = '';
+            }
+
+            document.body.removeChild(fileInput);
+        };
+
+        document.body.appendChild(fileInput);
+        fileInput.click();
+    } catch (error) {
+        showToast(`Error memilih file: ${error.message}`, 'error');
+    }
+}
+
+// Update bulk files list display
+function updateBulkFilesList(files) {
+    const bulkFilesList = elements.bulkFilesList;
+    if (!bulkFilesList) return;
+
+    bulkFilesList.innerHTML = files.map((fileData, index) => `
+        <div class="bulk-file-item" data-index="${index}">
+            <div class="bulk-file-name">
+                <i class="fas fa-file-video"></i>
+                ${fileData.fileName}
+            </div>
+            <button class="bulk-file-remove" onclick="removeBulkFile(${index})">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+// Remove file from bulk upload
+function removeBulkFile(index) {
+    const uploadedFiles = elements.bulkFilesList._uploadedFiles || [];
+    if (index < 0 || index >= uploadedFiles.length) return;
+
+    uploadedFiles.splice(index, 1);
+
+    if (uploadedFiles.length > 0) {
+        elements.bulkFiles.value = `${uploadedFiles.length} file dipilih`;
+        updateBulkFilesList(uploadedFiles);
+        elements.bulkFilesList._uploadedFiles = uploadedFiles;
+        elements.bulkFilesList._selectedFiles = uploadedFiles.map(f => f.selectedFile);
+    } else {
+        elements.bulkFiles.value = '';
+        elements.bulkFilesList.innerHTML = '';
+        elements.bulkFilesList._uploadedFiles = [];
+        elements.bulkFilesList._selectedFiles = [];
+    }
+
+    updateSendButtonState();
+}
+
+// Generate captions for bulk upload
+async function generateBulkCaptions() {
+    const files = elements.bulkFilesList._uploadedFiles || [];
+    const language = elements.bulkCaptionLanguage.value;
+
+    if (files.length === 0) {
+        showToast('Tidak ada file untuk generate caption', 'warning');
+        return;
+    }
+
+    showToast('Generate caption sedang berlangsung...', 'info');
+
+    const generateButton = document.querySelector('.bulk-caption-generation button');
+    if (generateButton) {
+        generateButton.disabled = true;
+        generateButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+    }
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        try {
+            const fileData = files[i];
+            const fileName = fileData.fileName.split('.').slice(0, -1).join('.'); // Remove extension
+
+            const result = await fetch(`${API_BASE}/api/gemini/generate-caption`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fileName, language })
+            });
+            const response = await result.json();
+
+            if (response.success) {
+                files[i].caption = response.description || '';
+                successCount++;
+            } else {
+                console.error(`Caption generation failed for ${fileName}:`, response.error);
+                files[i].caption = `Video ${fileName}`; // Fallback caption
+                errorCount++;
+            }
+        } catch (error) {
+            console.error(`Error generating caption for ${files[i].fileName}:`, error);
+            files[i].caption = `Video ${files[i].fileName.split('.').slice(0, -1).join('.')}`; // Fallback
+            errorCount++;
+        }
+    }
+
+    // Update UI with captions
+    updateBulkFilesListWithCaptions(files, elements.bulkCaptionLanguage);
+
+    if (generateButton) {
+        generateButton.disabled = false;
+        generateButton.innerHTML = '<i class="fas fa-magic"></i> Generate Caption';
+    }
+
+    if (successCount > 0) {
+        showToast(`${successCount} caption berhasil digenerate`, 'success');
+    }
+    if (errorCount > 0) {
+        showToast(`${errorCount} caption menggunakan fallback`, 'warning');
+    }
+}
+
+// Update bulk files list with captions
+function updateBulkFilesListWithCaptions(files) {
+    const bulkFilesList = elements.bulkFilesList;
+    if (!bulkFilesList) return;
+
+    bulkFilesList.innerHTML = files.map((fileData, index) => `
+        <div class="bulk-file-item" data-index="${index}">
+            <div class="bulk-file-name">
+                <i class="fas fa-file-video"></i>
+                ${fileData.fileName}
+                ${fileData.caption ? `<div class="bulk-file-caption">${fileData.caption.substring(0, 100)}${fileData.caption.length > 100 ? '...' : ''}</div>` : ''}
+            </div>
+            <button class="bulk-file-remove" onclick="removeBulkFile(${index})">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
 async function addToQueue(e) {
     e.preventDefault();
 
+    const isBulkMode = document.querySelector('input[name="upload-mode"]:checked').value === 'bulk';
+
+    if (isBulkMode) {
+        // Handle bulk upload
+        await handleBulkQueueSubmission();
+    } else {
+        // Handle single upload
+        await handleSingleQueueSubmission();
+    }
+}
+
+async function handleSingleQueueSubmission() {
     const formData = {
         account: elements.accountSelect.value,
         page: elements.pageSelect.value,
@@ -657,18 +922,110 @@ async function addToQueue(e) {
     }
 }
 
-// Update send button state - always enabled
+async function handleBulkQueueSubmission() {
+    try {
+        const uploadedFiles = elements.bulkFilesList._uploadedFiles || [];
+        if (uploadedFiles.length === 0) {
+            showToast('Tidak ada file untuk diupload', 'error');
+            return;
+        }
+
+        // Update button state to loading
+        updateSendButtonState(true);
+
+        // Prepare bulk data
+        const account = elements.accountSelect.value;
+        const page = elements.pageSelect.value;
+        const type = document.querySelector('input[name="upload-type"]:checked').value;
+        const intervalMinutes = parseInt(elements.bulkInterval.value) || 5;
+        const startTimeValue = elements.bulkStartTime.value;
+
+        // Calculate start time - if not specified, use current time for first video
+        const startTime = startTimeValue ? new Date(startTimeValue) : new Date();
+
+        // Prepare queue items for bulk upload
+        const queueItems = [];
+        let uploadedCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < uploadedFiles.length; i++) {
+            try {
+                const fileData = uploadedFiles[i];
+                const caption = fileData.caption || `Video ${fileData.fileName.split('.').slice(0, -1).join('.')}`;
+
+                // Calculate schedule time based on interval
+                const scheduleTime = new Date(startTime.getTime() + (i * intervalMinutes * 60 * 1000));
+
+                const queueData = {
+                    account: account,
+                    page: page,
+                    type: type,
+                    file: fileData.file,
+                    fileName: fileData.fileName,
+                    caption: caption,
+                    schedule: scheduleTime.toISOString(),
+                    bulkIndex: i + 1,
+                    bulkTotal: uploadedFiles.length
+                };
+
+                const result = await fetch(`${API_BASE}/api/queue`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(queueData)
+                });
+                const response = await result.json();
+
+                if (response.success) {
+                    queueItems.push({ ...queueData, id: response.id });
+                    // Track upload di analytics
+                    await trackUploadToAnalytics(queueData, response.id);
+                    uploadedCount++;
+                } else {
+                    console.error(`Failed to queue item ${i + 1}:`, response.error);
+                    errorCount++;
+                }
+            } catch (itemError) {
+                console.error(`Error queuing item ${i + 1}:`, itemError);
+                errorCount++;
+            }
+        }
+
+        if (uploadedCount > 0) {
+            // Clear form data
+            elements.bulkFiles.value = '';
+            if (elements.bulkFilesList) {
+                elements.bulkFilesList._uploadedFiles = [];
+                elements.bulkFilesList._selectedFiles = [];
+                elements.bulkFilesList.innerHTML = '';
+            }
+
+            updateSendButtonState(); // Reset button state
+            await loadAppData();
+            switchTab('queue');
+
+            if (uploadedCount === uploadedFiles.length) {
+                showToast(`${uploadedCount} video berhasil ditambahkan ke antrian dengan interval ${intervalMinutes} menit`, 'success');
+            } else {
+                showToast(`${uploadedCount} video berhasil ditambahkan, ${errorCount} gagal`, 'warning');
+            }
+        } else {
+            updateSendButtonState(); // Reset button state
+            showToast('Tidak ada video yang berhasil diantrian', 'error');
+        }
+
+    } catch (error) {
+        updateSendButtonState(); // Reset button state
+        showToast(`Error bulk upload: ${error.message}`, 'error');
+        console.error('Bulk upload error:', error);
+    }
+}
+
+// Update send button state - handles both single and bulk modes
 function updateSendButtonState(isLoading = false) {
     const buttonText = elements.addToQueueBtn.querySelector('.btn-text');
     const buttonIcon = elements.addToQueueBtn.querySelector('i');
-
-    // Debug logging
-    console.log('Button State Debug:', {
-        accountSelect: elements.accountSelect.value,
-        pageSelect: elements.pageSelect.value,
-        videoFile: elements.videoFile.value,
-        isLoading: isLoading
-    });
 
     if (isLoading) {
         // Loading state - only when actually submitting
@@ -678,9 +1035,35 @@ function updateSendButtonState(isLoading = false) {
         return;
     }
 
-    // Button is always enabled - no field validation
-    elements.addToQueueBtn.disabled = false;
-    buttonText.textContent = 'Kirim ke Facebook';
+    const isBulkMode = document.querySelector('input[name="upload-mode"]:checked').value === 'bulk';
+    const hasAccount = elements.accountSelect.value;
+    const hasPage = elements.pageSelect.value;
+
+    let isValid = true;
+
+    if (isBulkMode) {
+        // Bulk mode validation
+        const uploadedFiles = elements.bulkFilesList._uploadedFiles || [];
+        isValid = hasAccount && hasPage && uploadedFiles.length > 0;
+        console.log('Bulk Button State Debug:', {
+            isBulkMode,
+            hasAccount,
+            hasPage,
+            filesCount: uploadedFiles.length
+        });
+    } else {
+        // Single mode validation - less strict
+        isValid = hasAccount && hasPage; // Always enable for single mode
+        console.log('Single Button State Debug:', {
+            isBulkMode,
+            hasAccount,
+            hasPage,
+            videoFile: elements.videoFile.value
+        });
+    }
+
+    elements.addToQueueBtn.disabled = !isValid;
+    buttonText.textContent = isBulkMode ? 'Tambahkan ke Antrian Bulk' : 'Kirim ke Facebook';
     buttonIcon.className = 'fas fa-paper-plane';
 }
 
