@@ -222,9 +222,41 @@ class FacebookAutomation {
             for (const sel of selectors) {
                 try {
                     await page.waitForSelector(sel, { timeout: 2000 });
+
+                    // Add visual indicator before click
+                    await page.evaluate((selector) => {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            const rect = element.getBoundingClientRect();
+                            const indicator = document.createElement('div');
+                            indicator.style.position = 'absolute';
+                            indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                            indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                            indicator.style.width = '30px';
+                            indicator.style.height = '30px';
+                            indicator.style.border = '3px solid yellow';
+                            indicator.style.borderRadius = '50%';
+                            indicator.style.backgroundColor = 'rgba(255, 255, 0, 0.5)';
+                            indicator.style.zIndex = '999999';
+                            indicator.style.pointerEvents = 'none';
+                            indicator.textContent = 'SEL';
+                            indicator.style.color = 'black';
+                            indicator.style.fontSize = '8px';
+                            indicator.style.display = 'flex';
+                            indicator.style.alignItems = 'center';
+                            indicator.style.justifyContent = 'center';
+                            indicator.style.fontWeight = 'bold';
+                            document.body.appendChild(indicator);
+                            setTimeout(() => indicator.remove(), 1500);
+                        }
+                    }, sel);
+                    await page.waitForTimeout(500); // Give time for indicator to show
+
                     await page.click(sel);
                     selectorFound = true;
                     console.log(`✅ Clicked account selector: ${sel}`);
+                    await page.screenshot({ path: `debug-after-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+                    console.log(`📸 Screenshot: debug-after-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
                     break;
                 } catch (e) {
                     console.log(`❌ Selector ${sel} not found, trying next...`);
@@ -270,16 +302,42 @@ class FacebookAutomation {
                         href.includes(`pages/${targetPageId}`) ||
                         text.includes(targetPageId)) {
                         console.log(`✅ Found matching option, clicking...`);
+
+                        // Add visual indicator before click
+                        const rect = option.getBoundingClientRect();
+                        const indicator = document.createElement('div');
+                        indicator.style.position = 'absolute';
+                        indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                        indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                        indicator.style.width = '30px';
+                        indicator.style.height = '30px';
+                        indicator.style.border = '3px solid purple';
+                        indicator.style.borderRadius = '50%';
+                        indicator.style.backgroundColor = 'rgba(128, 0, 128, 0.5)';
+                        indicator.style.zIndex = '999999';
+                        indicator.style.pointerEvents = 'none';
+                        indicator.textContent = 'PAGE';
+                        indicator.style.color = 'white';
+                        indicator.style.fontSize = '8px';
+                        indicator.style.display = 'flex';
+                        indicator.style.alignItems = 'center';
+                        indicator.style.justifyContent = 'center';
+                        indicator.style.fontWeight = 'bold';
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1500);
+                        
                         option.click();
-                        return true;
+                        return { success: true, text: text };
                     }
                 }
 
-                return false;
+                return { success: false };
             }, pageId);
 
-            if (selected) {
-                console.log('✅ Page selected successfully');
+            if (selected.success) {
+                console.log(`✅ Page selected successfully: ${selected.text}`);
+                await page.screenshot({ path: `debug-after-page-option-click-${pageId}.png`, fullPage: true });
+                console.log(`📸 Screenshot: debug-after-page-option-click-${pageId}.png`);
                 await page.waitForTimeout(3000);
 
                 // Verify selection
@@ -435,9 +493,41 @@ try {
     for (const sel of selectors) {
         try {
             await page.waitForSelector(sel, { timeout: 2000 });
+
+            // Add visual indicator before click
+            await page.evaluate((selector) => {
+                const element = document.querySelector(selector);
+                if (element) {
+                    const rect = element.getBoundingClientRect();
+                    const indicator = document.createElement('div');
+                    indicator.style.position = 'absolute';
+                    indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                    indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                    indicator.style.width = '30px';
+                    indicator.style.height = '30px';
+                    indicator.style.border = '3px solid yellow';
+                    indicator.style.borderRadius = '50%';
+                    indicator.style.backgroundColor = 'rgba(255, 255, 0, 0.5)';
+                    indicator.style.zIndex = '999999';
+                    indicator.style.pointerEvents = 'none';
+                    indicator.textContent = 'SEL';
+                    indicator.style.color = 'black';
+                    indicator.style.fontSize = '8px';
+                    indicator.style.display = 'flex';
+                    indicator.style.alignItems = 'center';
+                    indicator.style.justifyContent = 'center';
+                    indicator.style.fontWeight = 'bold';
+                    document.body.appendChild(indicator);
+                    setTimeout(() => indicator.remove(), 1500);
+                }
+            }, sel);
+            await page.waitForTimeout(500); // Give time for indicator to show
+
             await page.click(sel);
             selectorFound = true;
-            console.log(`Clicked account selector: ${sel}`);
+            console.log(`✅ Clicked account selector: ${sel}`);
+            await page.screenshot({ path: `debug-reel-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+            console.log(`📸 Screenshot: debug-reel-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
             break;
         } catch (e) {
             // Continue
@@ -464,15 +554,43 @@ try {
             console.log(`Option: ${text} | href: ${href}`);
 
             if (href.includes(`profile.php?id=${pageId}`) || text.includes(pageId)) {
+                // Add visual indicator before click
+                const rect = option.getBoundingClientRect();
+                const indicator = document.createElement('div');
+                indicator.style.position = 'absolute';
+                indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                indicator.style.width = '30px';
+                indicator.style.height = '30px';
+                indicator.style.border = '3px solid purple';
+                indicator.style.borderRadius = '50%';
+                indicator.style.backgroundColor = 'rgba(128, 0, 128, 0.5)';
+                indicator.style.zIndex = '999999';
+                indicator.style.pointerEvents = 'none';
+                indicator.textContent = 'PAGE';
+                indicator.style.color = 'white';
+                indicator.style.fontSize = '8px';
+                indicator.style.display = 'flex';
+                indicator.style.alignItems = 'center';
+                indicator.style.justifyContent = 'center';
+                indicator.style.fontWeight = 'bold';
+                document.body.appendChild(indicator);
+                setTimeout(() => indicator.remove(), 1500);
+
                 option.click();
-                return true;
+                return { success: true, text: text };
             }
         }
 
-        return false;
+        return { success: false };
     }, uploadData.pageId);
 
-    if (!selected) {
+    if (selected.success) {
+        console.log(`✅ Page selected successfully: ${selected.text}`);
+        await page.screenshot({ path: `debug-reel-page-option-click-${uploadData.pageId}.png`, fullPage: true });
+        console.log(`📸 Screenshot: debug-reel-page-option-click-${uploadData.pageId}.png`);
+        await page.waitForTimeout(3000);
+    } else {
         throw new Error(`Could not select page with ID: ${uploadData.pageId}`);
     }
 
@@ -520,6 +638,8 @@ try {
 
             await fileInput.uploadFile(videoPath);
             console.log('Video file uploaded successfully');
+            await page.screenshot({ path: 'debug-reel-after-video-upload.png', fullPage: true });
+            console.log('📸 Screenshot: debug-reel-after-video-upload.png');
 
             // Wait for upload to process
             
@@ -562,6 +682,8 @@ try {
 
             console.log('🎯 Clicking first next at (228, 903)');
             await page.mouse.click(228, 903);
+            await page.screenshot({ path: 'debug-reel-after-first-next-click.png', fullPage: true });
+            console.log('📸 Screenshot: debug-reel-after-first-next-click.png');
             await page.waitForTimeout(3000);
 
             
@@ -572,9 +694,40 @@ try {
             // Input caption
             const captionInput = await page.$('[contenteditable="true"]');
             if (captionInput) {
+                // Add visual indicator before click
+                await page.evaluate(() => {
+                    const element = document.querySelector('[contenteditable="true"]');
+                    if (element) {
+                        const rect = element.getBoundingClientRect();
+                        const indicator = document.createElement('div');
+                        indicator.style.position = 'absolute';
+                        indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                        indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                        indicator.style.width = '30px';
+                        indicator.style.height = '30px';
+                        indicator.style.border = '3px solid green';
+                        indicator.style.borderRadius = '50%';
+                        indicator.style.backgroundColor = 'rgba(0, 128, 0, 0.5)';
+                        indicator.style.zIndex = '999999';
+                        indicator.style.pointerEvents = 'none';
+                        indicator.textContent = 'CAP';
+                        indicator.style.color = 'white';
+                        indicator.style.fontSize = '8px';
+                        indicator.style.display = 'flex';
+                        indicator.style.alignItems = 'center';
+                        indicator.style.justifyContent = 'center';
+                        indicator.style.fontWeight = 'bold';
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1500);
+                    }
+                });
+                await page.waitForTimeout(500); // Give time for indicator to show
+
                 await captionInput.click({ clickCount: 3 });
                 await captionInput.type(uploadData.caption || 'Test posting coordinate (700, 615)');
                 console.log('✅ Caption inputted');
+                await page.screenshot({ path: 'debug-reel-after-caption-input-click.png', fullPage: true });
+                console.log('📸 Screenshot: debug-reel-after-caption-input-click.png');
             }
 
             // Click second next
@@ -611,6 +764,8 @@ try {
 
             console.log('🎯 Clicking second next at (300, 903)');
             await page.mouse.click(300, 903);
+            await page.screenshot({ path: 'debug-reel-after-second-next-click.png', fullPage: true });
+            console.log('📸 Screenshot: debug-reel-after-second-next-click.png');
             await page.waitForTimeout(10000);
 
             // Take screenshot before posting
@@ -915,6 +1070,40 @@ if (switchSuccess) {
                     postArea = await page.$(selector);
                     if (postArea) {
                         console.log(`Found post creation area: ${selector}`);
+                        
+                        // Add visual indicator before click
+                        await page.evaluate((sel) => {
+                            const element = document.querySelector(sel);
+                            if (element) {
+                                const rect = element.getBoundingClientRect();
+                                const indicator = document.createElement('div');
+                                indicator.style.position = 'absolute';
+                                indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                                indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                                indicator.style.width = '30px';
+                                indicator.style.height = '30px';
+                                indicator.style.border = '3px solid cyan';
+                                indicator.style.borderRadius = '50%';
+                                indicator.style.backgroundColor = 'rgba(0, 255, 255, 0.5)';
+                                indicator.style.zIndex = '999999';
+                                indicator.style.pointerEvents = 'none';
+                                indicator.textContent = 'POST';
+                                indicator.style.color = 'black';
+                                indicator.style.fontSize = '8px';
+                                indicator.style.display = 'flex';
+                                indicator.style.alignItems = 'center';
+                                indicator.style.justifyContent = 'center';
+                                indicator.style.fontWeight = 'bold';
+                                document.body.appendChild(indicator);
+                                setTimeout(() => indicator.remove(), 1500);
+                            }
+                        }, selector);
+                        await page.waitForTimeout(500); // Give time for indicator to show
+
+                        await postArea.click();
+                        console.log(`✅ Clicked post creation area: ${selector}`);
+                        await page.screenshot({ path: `debug-post-creation-click-${selector.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+                        console.log(`📸 Screenshot: debug-post-creation-click-${selector.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
                         break;
                     }
                 } catch (error) {
@@ -925,7 +1114,7 @@ if (switchSuccess) {
             if (!postArea) {
                 // Fallback: look for any clickable element that might open file upload
                 console.log('Post area not found, trying fallback...');
-                await page.evaluate(() => {
+                const fallbackClicked = await page.evaluate(() => {
                     const elements = Array.from(document.querySelectorAll('[role="button"], button, div[tabindex]'));
                     const uploadBtn = elements.find(el =>
                         el.textContent?.includes('Photo') ||
@@ -935,11 +1124,41 @@ if (switchSuccess) {
                         el.getAttribute('aria-label')?.includes('Video')
                     );
                     if (uploadBtn) {
+                        const rect = uploadBtn.getBoundingClientRect();
+                        const indicator = document.createElement('div');
+                        indicator.style.position = 'absolute';
+                        indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                        indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                        indicator.style.width = '30px';
+                        indicator.style.height = '30px';
+                        indicator.style.border = '3px solid cyan';
+                        indicator.style.borderRadius = '50%';
+                        indicator.style.backgroundColor = 'rgba(0, 255, 255, 0.5)';
+                        indicator.style.zIndex = '999999';
+                        indicator.style.pointerEvents = 'none';
+                        indicator.textContent = 'FALL';
+                        indicator.style.color = 'black';
+                        indicator.style.fontSize = '8px';
+                        indicator.style.display = 'flex';
+                        indicator.style.alignItems = 'center';
+                        indicator.style.justifyContent = 'center';
+                        indicator.style.fontWeight = 'bold';
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1500);
+
                         uploadBtn.click();
                         return true;
                     }
                     return false;
                 });
+                if (fallbackClicked) {
+                    console.log('✅ Clicked fallback post creation button.');
+                    await page.waitForTimeout(500); // Give time for indicator to show
+                    await page.screenshot({ path: 'debug-post-creation-fallback-click.png', fullPage: true });
+                    console.log('📸 Screenshot: debug-post-creation-fallback-click.png');
+                } else {
+                    throw new Error('Post creation area not found');
+                }
                 await page.waitForTimeout(2000);
             }
 
@@ -984,6 +1203,8 @@ if (switchSuccess) {
 
             await fileInput.uploadFile(videoPath);
             console.log('Video file uploaded successfully');
+            await page.screenshot({ path: 'debug-post-after-video-upload.png', fullPage: true });
+            console.log('📸 Screenshot: debug-post-after-video-upload.png');
 
             // Step 3: Wait for upload processing, input caption FIRST, then click "Berikutnya" button
             console.log('Waiting for video processing, then inputting caption and clicking "Berikutnya" button...');
@@ -1075,6 +1296,35 @@ if (switchSuccess) {
             }
 
             if (captionFound && captionInput) {
+                // Add visual indicator before click
+                await page.evaluate(() => {
+                    const element = document.querySelector('[contenteditable="true"]');
+                    if (element) {
+                        const rect = element.getBoundingClientRect();
+                        const indicator = document.createElement('div');
+                        indicator.style.position = 'absolute';
+                        indicator.style.left = (rect.left + rect.width / 2 - 15) + 'px';
+                        indicator.style.top = (rect.top + rect.height / 2 - 15) + 'px';
+                        indicator.style.width = '30px';
+                        indicator.style.height = '30px';
+                        indicator.style.border = '3px solid green';
+                        indicator.style.borderRadius = '50%';
+                        indicator.style.backgroundColor = 'rgba(0, 128, 0, 0.5)';
+                        indicator.style.zIndex = '999999';
+                        indicator.style.pointerEvents = 'none';
+                        indicator.textContent = 'CAP';
+                        indicator.style.color = 'white';
+                        indicator.style.fontSize = '8px';
+                        indicator.style.display = 'flex';
+                        indicator.style.alignItems = 'center';
+                        indicator.style.justifyContent = 'center';
+                        indicator.style.fontWeight = 'bold';
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1500);
+                    }
+                });
+                await page.waitForTimeout(500); // Give time for indicator to show
+
                 // Click to focus and clear existing content
                 await captionInput.click({ clickCount: 1 });
                 await page.waitForTimeout(500);
@@ -1089,6 +1339,8 @@ if (switchSuccess) {
                 // Now input the caption
                 await page.keyboard.type(uploadData.caption || 'Uploaded via automation');
                 console.log('✅ Caption inputted BEFORE "Berikutnya" button click');
+                await page.screenshot({ path: 'debug-post-after-caption-input-click.png', fullPage: true });
+                console.log('📸 Screenshot: debug-post-after-caption-input-click.png');
 
                 // Trigger change events
                 await page.evaluate(() => {
@@ -1109,6 +1361,7 @@ if (switchSuccess) {
             // IMPLEMENT ENHANCED NEXT BUTTON CLICKING LOGIC
             let nextBtnElement = null;
             let nextBtnFound = false;
+            let nextBtnCoords = null;
 
             // Try to find and click the "Berikutnya" button directly via element
             try {
@@ -1144,8 +1397,9 @@ if (switchSuccess) {
                 });
 
                 if (nextBtnFound && nextBtnFound.success) {
-                    // Add visual indicator and click
-                    console.log(`🎯 BERIKUTNYA button found at coordinates: (${Math.round(nextBtnFound.coords.x)}, ${Math.round(nextBtnFound.coords.y)})`);
+                    nextBtnCoords = nextBtnFound.coords;
+                    // Add visual indicator before click
+                    console.log(`🎯 BERIKUTNYA button found at coordinates: (${Math.round(nextBtnCoords.x)}, ${Math.round(nextBtnCoords.y)})`);
 
                     console.log('🟥 Adding visual indicator for BERIKUTNYA...');
                     await page.evaluate((x, y) => {
@@ -1178,7 +1432,7 @@ if (switchSuccess) {
                                 indicator.parentNode.removeChild(indicator);
                             }
                         }, 5000);
-                    }, nextBtnFound.coords.x, nextBtnFound.coords.y);
+                    }, nextBtnCoords.x, nextBtnCoords.y);
 
                     // Wait for visual indicator to be visible
                     console.log('📱 Waiting 5 seconds for visual indicator...');
@@ -1209,8 +1463,8 @@ if (switchSuccess) {
 
                     if (clickResult.clicked) {
                         console.log(`✅ SUCCESS! Element clicked "Berikutnya" button: "${clickResult.text}"`);
-                        console.log('');
-
+                        await page.screenshot({ path: 'debug-post-after-berikutnya-click.png', fullPage: true });
+                        console.log('📸 Screenshot: debug-post-after-berikutnya-click.png');
                         await page.waitForTimeout(2000);
                     } else {
                         console.log('❌ FAILED: Could not click "Berikutnya" button');
@@ -1239,6 +1493,7 @@ if (switchSuccess) {
 
             // IMPLEMENT ENHANCED "KIRIM" BUTTON CLICKING LOGIC
             let kirimBtnFound = false;
+            let kirimBtnCoords = null;
 
             // Try to find and click the "Kirim" button directly via element
             try {
@@ -1283,8 +1538,9 @@ if (switchSuccess) {
                 });
 
                 if (kirimBtnFound && kirimBtnFound.success) {
+                    kirimBtnCoords = kirimBtnFound.coords;
                     // Add visual indicator for "Kirim" button
-                    console.log(`🎯 KIRIM button found at coordinates: (${Math.round(kirimBtnFound.coords.x)}, ${Math.round(kirimBtnFound.coords.y)})`);
+                    console.log(`🎯 KIRIM button found at coordinates: (${Math.round(kirimBtnCoords.x)}, ${Math.round(kirimBtnCoords.y)})`);
 
                     console.log('🟢 Adding visual indicator for KIRIM...');
                     await page.evaluate((x, y) => {
@@ -1317,14 +1573,14 @@ if (switchSuccess) {
                                 indicator.parentNode.removeChild(indicator);
                             }
                         }, 3000);
-                    }, kirimBtnFound.coords.x, kirimBtnFound.coords.y);
+                    }, kirimBtnCoords.x, kirimBtnCoords.y);
 
                     // Wait for visual indicator to be visible
                     console.log('⏳ Waiting 2 seconds for visual indicator...');
                     await page.waitForTimeout(2000);
 
                     // Now click the button using element click
-                    console.log(`🖱️ Clicking KIRIM button at coordinates (${Math.round(kirimBtnFound.coords.x)}, ${Math.round(kirimBtnFound.coords.y)})...`);
+                    console.log(`🖱️ Clicking KIRIM button at coordinates (${Math.round(kirimBtnCoords.x)}, ${Math.round(kirimBtnCoords.y)})...`);
 
                     const clickResult = await page.evaluate(() => {
                         const allButtons = Array.from(document.querySelectorAll('button, [role="button"], div[role="button"], span[role="button"]'));
@@ -1354,6 +1610,8 @@ if (switchSuccess) {
 
                     if (clickResult.clicked) {
                         console.log(`✅ SUCCESS! Element clicked "Kirim" button: "${clickResult.text}"`);
+                        await page.screenshot({ path: 'debug-post-after-kirim-click.png', fullPage: true });
+                        console.log('📸 Screenshot: debug-post-after-kirim-click.png');
 
                         // GET SUCCESS MESSAGE LIKE REELS - CHECK SHORT TEXT FRAGMENTS
                         let successMessage = { found: false };
