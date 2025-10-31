@@ -957,6 +957,176 @@ cron.schedule('*/30 * * * * *', async () => {
     }
 });
 
+// Debug Routes
+app.get('/api/debug/screenshots', (req, res) => {
+    try {
+        const screenshotsDir = path.join(__dirname);
+
+        // Get all debug screenshot files
+        const screenshotFiles = fs.readdirSync(screenshotsDir)
+            .filter(file => file.startsWith('debug-') && file.endsWith('.png'))
+            .map(file => {
+                const filePath = path.join(screenshotsDir, file);
+                const stats = fs.statSync(filePath);
+                return {
+                    filename: file,
+                    filepath: filePath,
+                    size: stats.size,
+                    timestamp: stats.mtime.toISOString(),
+                    step: file.replace('debug-', '').replace('.png', '').replace(/-/g, ' ')
+                };
+            })
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)) // Latest first
+            .slice(0, 20); // Only return the 20 latest screenshots
+
+        res.json({ success: true, screenshots: screenshotFiles });
+    } catch (error) {
+        console.error('Error listing screenshots:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Serve individual screenshot files
+app.get('/api/debug/screenshots/:filename', (req, res) => {
+    try {
+        const { filename } = req.params;
+
+        // Basic security: only allow files that start with 'debug-' and end with '.png'
+        if (!filename.startsWith('debug-') || !filename.endsWith('.png')) {
+            return res.status(403).json({ error: 'Invalid filename' });
+        }
+
+        const filePath = path.join(__dirname, filename);
+
+        // Check if file exists
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'Screenshot not found' });
+        }
+
+        // Set appropriate headers and send file
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+
+        res.sendFile(filePath);
+    } catch (error) {
+        console.error('Error serving screenshot:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get terminal logs
+let terminalLogs = {
+    stdout: [],
+    stderr: []
+};
+
+app.get('/api/debug/logs', (req, res) => {
+    try {
+        const { type = 'stdout', limit = 50 } = req.query;
+        const limitNum = parseInt(limit) || 50;
+
+        const logs = terminalLogs[type] || [];
+        const recentLogs = logs.slice(-limitNum);
+
+        res.json({
+            success: true,
+            logs: recentLogs,
+            type: type,
+            total: logs.length
+        });
+    } catch (error) {
+        console.error('Error getting logs:', error);
+        res.status(500).json({
+            success: false,
+            logs: [],
+            error: error.message
+        });
+    }
+});
+
+// Clear terminal logs
+app.post('/api/debug/logs/clear', (req, res) => {
+    try {
+        const { type } = req.body;
+
+        if (type && (type === 'stdout' || type === 'stderr')) {
+            terminalLogs[type] = [];
+        } else {
+            // Clear both if no specific type
+            terminalLogs.stdout = [];
+            terminalLogs.stderr = [];
+        }
+
+        res.json({ success: true, message: 'Logs cleared' });
+    } catch (error) {
+        console.error('Error clearing logs:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Function to add log line (called from other parts of the app)
+global.addTerminalLog = function(message, type = 'stdout', level = 'info') {
+    try {
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            message: message,
+            level: level
+        };
+
+        if (type === 'stdout') {
+            terminalLogs.stdout.push(JSON.stringify(logEntry));
+            // Keep only last 1000 lines
+            if (terminalLogs.stdout.length > 1000) {
+                terminalLogs.stdout = terminalLogs.stdout.slice(-1000);
+            }
+        } else if (type === 'stderr') {
+            terminalLogs.stderr.push(JSON.stringify(logEntry));
+            // Keep only last 1000 lines
+            if (terminalLogs.stderr.length > 1000) {
+                terminalLogs.stderr = terminalLogs.stderr.slice(-1000);
+            }
+        }
+    } catch (error) {
+        console.error('Error adding terminal log:', error);
+    }
+};
+
+// Override console.log to also add to terminal logs
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = function(...args) {
+    originalConsoleLog(...args);
+
+    // Convert args to string and add to terminal logs
+    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+    global.addTerminalLog(message, 'stdout', 'info');
+};
+
+console.error = function(...args) {
+    originalConsoleError(...args);
+
+    // Convert args to string and add to terminal logs
+    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+    global.addTerminalLog(message, 'stderr', 'error');
+};
+
+console.warn = function(...args) {
+    originalConsoleWarn(...args);
+
+    // Convert args to string and add to terminal logs
+    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+    global.addTerminalLog(message, 'stdout', 'warn');
+};
+
+// Sample log entries for testing
+setTimeout(() => {
+    global.addTerminalLog('Server started successfully', 'stdout', 'info');
+    global.addTerminalLog('Queue processor initialized', 'stdout', 'info');
+    global.addTerminalLog('Analytics manager ready', 'stdout', 'info');
+}, 1000);
+
 // Cleanup on exit
 process.on('SIGINT', () => {
     console.log('\n🛑 SIGINT received, cleaning up...');
