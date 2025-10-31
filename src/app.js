@@ -3250,16 +3250,66 @@ function closeUserModal() {
 async function handleSaveUser(e) {
     e.preventDefault();
 
-    const userId = elements.userId.value.trim();
-    const username = elements.userUsername.value.trim();
-    const displayName = elements.userDisplayName.value.trim();
-    const password = elements.userPassword.value.trim();
-    const confirmPassword = elements.userConfirmPassword.value.trim();
-    const role = elements.userRole.value;
+    console.log('handleSaveUser called');
 
-    // Basic validation
-    if (!username || !displayName || !role) {
-        showToast('Username, display name, dan role harus diisi', 'error');
+    // Check if required elements exist
+    if (!elements.userId || !elements.userUsername || !elements.userRole) {
+        console.error('Required elements missing:', {
+            userId: !!elements.userId,
+            userUsername: !!elements.userUsername,
+            userRole: !!elements.userRole
+        });
+        showToast('Form belum siap. Silakan coba lagi.', 'error');
+        return;
+    }
+
+    // Force immediate value capture before any processing
+    // This should capture current user input regardless of focus state
+    const rawUsername = document.getElementById('user-username')?.value || '';
+    const rawDisplayName = document.getElementById('user-display-name')?.value || '';
+    const rawPassword = document.getElementById('user-password')?.value || '';
+    const rawConfirmPassword = document.getElementById('user-confirm-password')?.value || '';
+    const rawRole = document.getElementById('user-role')?.value || '';
+
+    console.log('Raw DOM values at submit:', { rawUsername, rawDisplayName, rawPassword, rawConfirmPassword, rawRole });
+
+    // Force blur/focus cycle to trigger any pending value updates
+    const inputIds = ['user-username', 'user-display-name', 'user-password', 'user-confirm-password'];
+    inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.focus();
+            el.blur();
+        }
+    });
+
+    // Small delay for any event handlers
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Get final values after potential updates
+    const userId = document.getElementById('user-id')?.value?.trim() || '';
+    const username = document.getElementById('user-username')?.value?.trim() || rawUsername.trim();
+    const password = document.getElementById('user-password')?.value?.trim() || rawPassword.trim();
+    const confirmPassword = document.getElementById('user-confirm-password')?.value?.trim() || rawConfirmPassword.trim();
+    const role = document.getElementById('user-role')?.value || rawRole;
+
+    // Display name is automatically set to username
+    const displayName = username;
+
+    console.log('Final processed values:', { userId, username, displayName, password: password ? '[REDACTED]' : '', confirmPassword: confirmPassword ? '[REDACTED]' : '', role });
+
+    // Basic validation with specific field checking
+    console.log('Validation check:', { username: !!username, role: !!role });
+
+    if (!username) {
+        showToast('Username harus diisi', 'error');
+        elements.userUsername?.focus();
+        return;
+    }
+
+    if (!role) {
+        showToast('Role harus dipilih', 'error');
+        elements.userRole?.focus();
         return;
     }
 

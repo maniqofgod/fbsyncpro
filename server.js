@@ -1234,14 +1234,15 @@ app.get('/api/analytics', async (req, res) => {
     try {
         const timeRange = req.query.timeRange || '30d';
         const userId = req.user.id;
+        const userRole = req.user.role;
 
-        console.log(`📊 Getting analytics data for time range: ${timeRange} (User: ${userId})`);
+        console.log(`📊 Getting analytics data for time range: ${timeRange} (User: ${userId}, Role: ${userRole})`);
 
         if (!globalAnalyticsManager) {
             globalAnalyticsManager = new AnalyticsManager();
         }
 
-        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange, userId);
+        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange, userId, userRole);
 
         if (dashboardData) {
             console.log('✅ Analytics data retrieved successfully');
@@ -1317,14 +1318,16 @@ app.post('/api/analytics/update-engagement', async (req, res) => {
 app.post('/api/analytics/export', async (req, res) => {
     try {
         const { format, timeRange } = req.body;
+        const userId = req.user.id;
+        const userRole = req.user.role;
 
-        console.log(`📤 Exporting analytics data in ${format} format for ${timeRange}`);
+        console.log(`📤 Exporting analytics data in ${format} format for ${timeRange} (User: ${userId}, Role: ${userRole})`);
 
         if (!globalAnalyticsManager) {
             globalAnalyticsManager = new AnalyticsManager();
         }
 
-        const result = await globalAnalyticsManager.exportData(format || 'json', timeRange || '30d');
+        const result = await globalAnalyticsManager.exportData(format || 'json', timeRange || '30d', userId, userRole);
 
         if (result.success) {
             console.log(`✅ Analytics data exported successfully in ${format} format`);
@@ -1450,13 +1453,37 @@ function deleteUser(userId) {
             }
         }
 
-        // Delete user's data (this will be handled by foreign key constraints)
-        const result = db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+        // Start a transaction to ensure atomicity
+        const begin = db.prepare('BEGIN');
+        const commit = db.prepare('COMMIT');
+        const rollback = db.prepare('ROLLBACK');
 
-        if (result.changes > 0) {
-            return { success: true };
-        } else {
-            return { success: false, error: 'User not found' };
+        begin.run();
+
+        try {
+            // Delete user's data from child tables first (respecting foreign key constraints)
+            // Only delete from tables that actually have user_id column
+            db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM queue WHERE user_id = ?').run(userId);
+            db.prepare('DELETE FROM facebook_accounts WHERE user_id = ?').run(userId);
+
+            // Note: gemini_apis, gemini_usage, uploads_analytics, and engagement_analytics
+            // don't have user_id columns in the current database schema, so skip them
+
+            // Finally, delete the user
+            const result = db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+            if (result.changes > 0) {
+                commit.run();
+                return { success: true };
+            } else {
+                rollback.run();
+                return { success: false, error: 'User not found' };
+            }
+        } catch (txError) {
+            rollback.run();
+            console.error('Error during user deletion transaction:', txError);
+            return { success: false, error: txError.message };
         }
     } catch (error) {
         console.error('Error deleting user:', error);

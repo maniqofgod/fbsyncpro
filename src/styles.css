@@ -2065,7 +2065,7 @@ body {
 .terminal-monitor {
     flex: 1;
     background: #1a1a1a;
-    border-radius: 8px;
+    border-radius: 20px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -2124,7 +2124,7 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 15px;
-    max-height: 4000px;
+    max-height: 800px;
     overflow-y: auto;
     padding-right: 8px;
 }

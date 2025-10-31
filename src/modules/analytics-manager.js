@@ -229,7 +229,7 @@ class AnalyticsManager {
     /**
      * Get analytics dashboard data
      */
-    async getDashboardData(timeRange = '30d', userId) {
+    async getDashboardData(timeRange = '30d', userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
             const endDate = new Date();
             const startDate = new Date();
@@ -249,11 +249,11 @@ class AnalyticsManager {
             }
 
             const queryPromises = [
-                this.getUploadsData(startDate, endDate, userId),
-                this.getEngagementData(startDate, endDate, userId),
-                this.getTrendsDataFromDB(startDate, endDate, userId),
-                this.getAccountComparisonFromDB(startDate, endDate, userId),
-                this.getCategoryStatsFromDB(userId),
+                this.getUploadsData(startDate, endDate, userId, userRole),
+                this.getEngagementData(startDate, endDate, userId, userRole),
+                this.getTrendsDataFromDB(startDate, endDate, userId, userRole),
+                this.getAccountComparisonFromDB(startDate, endDate, userId, userRole),
+                this.getCategoryStatsFromDB(userId, userRole),
             ];
 
             Promise.all(queryPromises).then(([uploads, engagement, trendsData, accounts, categories]) => {
@@ -632,9 +632,9 @@ class AnalyticsManager {
     /**
      * Export analytics data
      */
-    async exportData(format = 'json', timeRange = '30d') {
+    async exportData(format = 'json', timeRange = '30d', userId, userRole = 'user') {
         try {
-            const dashboardData = await this.getDashboardData(timeRange);
+            const dashboardData = await this.getDashboardData(timeRange, userId, userRole);
 
             if (format === 'json') {
                 return {
@@ -683,15 +683,27 @@ class AnalyticsManager {
     }
 
     // Helper methods for database queries
-    async getUploadsData(startDate, endDate, userId) {
+    async getUploadsData(startDate, endDate, userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
-            const query = `
-                SELECT * FROM analytics_uploads
-                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
-                ORDER BY actual_upload_time DESC
-            `;
+            let query, params;
 
-            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+            if (userRole === 'admin') {
+                query = `
+                    SELECT * FROM analytics_uploads
+                    WHERE actual_upload_time BETWEEN ? AND ?
+                    ORDER BY actual_upload_time DESC
+                `;
+                params = [startDate.toISOString(), endDate.toISOString()];
+            } else {
+                query = `
+                    SELECT * FROM analytics_uploads
+                    WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                    ORDER BY actual_upload_time DESC
+                `;
+                params = [userId, startDate.toISOString(), endDate.toISOString()];
+            }
+
+            this.db.all(query, params, (err, rows) => {
                 if (err) {
                     console.error('Error getting uploads data:', err);
                     resolve([]);
@@ -719,15 +731,27 @@ class AnalyticsManager {
         });
     }
 
-    async getEngagementData(startDate, endDate, userId) {
+    async getEngagementData(startDate, endDate, userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
-            const query = `
-                SELECT * FROM analytics_engagement
-                WHERE user_id = ? AND tracked_at BETWEEN ? AND ?
-                ORDER BY tracked_at DESC
-            `;
+            let query, params;
 
-            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+            if (userRole === 'admin') {
+                query = `
+                    SELECT * FROM analytics_engagement
+                    WHERE tracked_at BETWEEN ? AND ?
+                    ORDER BY tracked_at DESC
+                `;
+                params = [startDate.toISOString(), endDate.toISOString()];
+            } else {
+                query = `
+                    SELECT * FROM analytics_engagement
+                    WHERE user_id = ? AND tracked_at BETWEEN ? AND ?
+                    ORDER BY tracked_at DESC
+                `;
+                params = [userId, startDate.toISOString(), endDate.toISOString()];
+            }
+
+            this.db.all(query, params, (err, rows) => {
                 if (err) {
                     console.error('Error getting engagement data:', err);
                     resolve([]);
@@ -757,20 +781,37 @@ class AnalyticsManager {
         });
     }
 
-    async getTrendsDataFromDB(startDate, endDate, userId) {
+    async getTrendsDataFromDB(startDate, endDate, userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
-            const query = `
-                SELECT
-                    DATE(actual_upload_time) as date,
-                    COUNT(*) as totalUploads,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads
-                FROM analytics_uploads
-                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
-                GROUP BY DATE(actual_upload_time)
-                ORDER BY date DESC
-            `;
+            let query, params;
 
-            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+            if (userRole === 'admin') {
+                query = `
+                    SELECT
+                        DATE(actual_upload_time) as date,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads
+                    FROM analytics_uploads
+                    WHERE actual_upload_time BETWEEN ? AND ?
+                    GROUP BY DATE(actual_upload_time)
+                    ORDER BY date DESC
+                `;
+                params = [startDate.toISOString(), endDate.toISOString()];
+            } else {
+                query = `
+                    SELECT
+                        DATE(actual_upload_time) as date,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads
+                    FROM analytics_uploads
+                    WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                    GROUP BY DATE(actual_upload_time)
+                    ORDER BY date DESC
+                `;
+                params = [userId, startDate.toISOString(), endDate.toISOString()];
+            }
+
+            this.db.all(query, params, (err, rows) => {
                 if (err) {
                     console.error('Error getting trends data:', err);
                     resolve([]);
@@ -780,8 +821,9 @@ class AnalyticsManager {
                 // Process daily stats and engagement data
                 const dailyStats = [];
                 let i = 0;
-                while (startDate <= endDate) {
-                    const dateString = startDate.toISOString().split('T')[0];
+                const startDateCopy = new Date(startDate);
+                while (startDateCopy <= endDate) {
+                    const dateString = startDateCopy.toISOString().split('T')[0];
                     const dbRow = rows.find(row => row.date === dateString) || {
                         totalUploads: 0,
                         successfulUploads: 0
@@ -796,11 +838,11 @@ class AnalyticsManager {
                         topPerformingUpload: null
                     });
 
-                    startDate.setDate(startDate.getDate() + 1);
+                    startDateCopy.setDate(startDateCopy.getDate() + 1);
                 }
 
                 // Get engagement data for the same period
-                this.getEngagementData(new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000), endDate, userId)
+                this.getEngagementData(new Date(startDateCopy.getTime() - 30 * 24 * 60 * 60 * 1000), endDate, userId, userRole)
                     .then(engagementData => {
                         // Aggregate engagement by date
                         const engagementByDate = {};
@@ -843,20 +885,37 @@ class AnalyticsManager {
         });
     }
 
-    async getAccountComparisonFromDB(startDate, endDate, userId) {
+    async getAccountComparisonFromDB(startDate, endDate, userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
-            const query = `
-                SELECT
-                    account_name,
-                    COUNT(*) as totalUploads,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                    AVG(processing_time) as averageProcessingTime
-                FROM analytics_uploads
-                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
-                GROUP BY account_name
-            `;
+            let query, params;
 
-            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+            if (userRole === 'admin') {
+                query = `
+                    SELECT
+                        account_name,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        AVG(processing_time) as averageProcessingTime
+                    FROM analytics_uploads
+                    WHERE actual_upload_time BETWEEN ? AND ?
+                    GROUP BY account_name
+                `;
+                params = [startDate.toISOString(), endDate.toISOString()];
+            } else {
+                query = `
+                    SELECT
+                        account_name,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        AVG(processing_time) as averageProcessingTime
+                    FROM analytics_uploads
+                    WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                    GROUP BY account_name
+                `;
+                params = [userId, startDate.toISOString(), endDate.toISOString()];
+            }
+
+            this.db.all(query, params, (err, rows) => {
                 if (err) {
                     console.error('Error getting account comparison:', err);
                     resolve([]);
@@ -882,20 +941,37 @@ class AnalyticsManager {
         });
     }
 
-    async getCategoryStatsFromDB(userId) {
+    async getCategoryStatsFromDB(userId, userRole = 'user') {
         return new Promise((resolve, reject) => {
-            const query = `
-                SELECT
-                    category,
-                    COUNT(*) as totalUploads,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                    GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
-                FROM analytics_uploads
-                WHERE user_id = ? AND category IS NOT NULL AND category != ''
-                GROUP BY category
-            `;
+            let query, params;
 
-            this.db.all(query, [userId], (err, rows) => {
+            if (userRole === 'admin') {
+                query = `
+                    SELECT
+                        category,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
+                    FROM analytics_uploads
+                    WHERE category IS NOT NULL AND category != ''
+                    GROUP BY category
+                `;
+                params = [];
+            } else {
+                query = `
+                    SELECT
+                        category,
+                        COUNT(*) as totalUploads,
+                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
+                    FROM analytics_uploads
+                    WHERE user_id = ? AND category IS NOT NULL AND category != ''
+                    GROUP BY category
+                `;
+                params = [userId];
+            }
+
+            this.db.all(query, params, (err, rows) => {
                 if (err) {
                     console.error('Error getting category stats:', err);
                     resolve([]);
