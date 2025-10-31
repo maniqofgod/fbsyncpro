@@ -63,7 +63,7 @@ class FacebookAutomation {
             // Step 1: Navigate to profile
             console.log('📍 Step 1: Navigate to profile');
             await page.goto(`https://www.facebook.com/profile.php?id=${pageId}`, { waitUntil: 'networkidle2' });
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             console.log('✅ Profile loaded - Taking initial screenshot...');
             await page.screenshot({ path: 'debug-profile-loaded.png', width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-profile-loaded.png');
@@ -103,7 +103,7 @@ class FacebookAutomation {
             console.log('✅ 🖱️ DASHBOARD CLICKED at (150, 200) - Taking screenshot...');
             await page.screenshot({ path: 'debug-after-dashboard-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-after-dashboard-click.png');
-            await page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // Check URL after dashboard click
             let currentUrl = page.url();
@@ -162,7 +162,7 @@ class FacebookAutomation {
                     await page.screenshot({ path: `debug-after-ubah-${coord.name.toLowerCase()}.png`, width: 1024, height: 768 });
                     console.log(`📸 Screenshot: debug-after-ubah-${coord.name.toLowerCase()}.png`);
 
-                    await page.waitForTimeout(3000);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
                     currentUrl = page.url();
                     console.log('📍 URL after Ubah click:', currentUrl);
 
@@ -250,7 +250,7 @@ class FacebookAutomation {
                             setTimeout(() => indicator.remove(), 1500);
                         }
                     }, sel);
-                    await page.waitForTimeout(500); // Give time for indicator to show
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
 
                     await page.click(sel);
                     selectorFound = true;
@@ -275,7 +275,7 @@ class FacebookAutomation {
             }
 
             // Wait for dropdown options to load
-            await page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // Find and click the option that matches pageId
             const selected = await page.evaluate((targetPageId) => {
@@ -338,7 +338,7 @@ class FacebookAutomation {
                 console.log(`✅ Page selected successfully: ${selected.text}`);
                 await page.screenshot({ path: `debug-after-page-option-click-${pageId}.png` });
                 console.log(`📸 Screenshot: debug-after-page-option-click-${pageId}.png`);
-                await page.waitForTimeout(3000);
+                await new Promise(resolve => setTimeout(resolve, 3000));
 
                 // Verify selection
                 const currentUrl = page.url();
@@ -391,7 +391,7 @@ class FacebookAutomation {
             });
 
             // Wait for page to load
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             const newUrl = page.url();
             console.log(`📍 New URL after navigation: ${newUrl}`);
@@ -451,7 +451,7 @@ class FacebookAutomation {
             await page.goto(`https://www.facebook.com/profile.php?id=${uploadData.pageId}`, { waitUntil: 'networkidle2' });
 
             // Wait for profile page to load
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             // Check if profile loaded successfully
             const isLoggedIn = await this.checkLoginStatus(page);
@@ -521,7 +521,7 @@ try {
                     setTimeout(() => indicator.remove(), 1500);
                 }
             }, sel);
-            await page.waitForTimeout(500); // Give time for indicator to show
+            await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
 
             await page.click(sel);
             selectorFound = true;
@@ -539,7 +539,7 @@ try {
     }
 
     // Wait for dropdown options
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Find and click the option that matches pageId
     const selected = await page.evaluate((pageId) => {
@@ -589,13 +589,13 @@ try {
         console.log(`✅ Page selected successfully: ${selected.text}`);
         await page.screenshot({ path: `debug-reel-page-option-click-${uploadData.pageId}.png` });
         console.log(`📸 Screenshot: debug-reel-page-option-click-${uploadData.pageId}.png`);
-        await page.waitForTimeout(3000);
+        await new Promise(resolve => setTimeout(resolve, 3000));
     } else {
         throw new Error(`Could not select page with ID: ${uploadData.pageId}`);
     }
 
     console.log('Page selected successfully');
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
 } catch (error) {
     console.log('Page selection failed or not needed:', error.message);
@@ -684,7 +684,7 @@ try {
             await page.mouse.click(228, 903);
             await page.screenshot({ path: 'debug-reel-after-first-next-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-reel-after-first-next-click.png');
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             
             
@@ -721,7 +721,7 @@ try {
                         setTimeout(() => indicator.remove(), 1500);
                     }
                 });
-                await page.waitForTimeout(500); // Give time for indicator to show
+                await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
 
                 await captionInput.click({ clickCount: 3 });
                 await captionInput.type(uploadData.caption || 'Test posting coordinate (700, 615)');
@@ -766,7 +766,7 @@ try {
             await page.mouse.click(300, 903);
             await page.screenshot({ path: 'debug-reel-after-second-next-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-reel-after-second-next-click.png');
-            await page.waitForTimeout(10000);
+            await new Promise(resolve => setTimeout(resolve, 10000));
 
             // Take screenshot before posting
             await page.screenshot({ path: 'debug-700-615-before.png' , width: 1024, height: 768 });
@@ -848,7 +848,7 @@ try {
                 });
 
                 if (!successMessage.found) {
-                    await page.waitForTimeout(2000);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                     attempts++;
                     
                 }
@@ -884,7 +884,7 @@ try {
             
 
             // Wait for result
-            await page.waitForTimeout(5000);
+            await new Promise(resolve => setTimeout(resolve, 5000));
             
 
             
@@ -937,7 +937,7 @@ try {
     }
 
     // Wait for dropdown options
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Find and click the option that matches pageId
     const selected = await page.evaluate((pageId) => {
@@ -965,7 +965,7 @@ try {
     }
 
     console.log('Page selected successfully');
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
 } catch (error) {
     console.log('Page selection failed or not needed for post:', error.message);
@@ -1025,7 +1025,7 @@ try {
             });
 
             // Wait for profile page to load
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             // Check if profile loaded successfully
             const isLoggedIn = await this.checkLoginStatus(page);
@@ -1098,7 +1098,7 @@ if (switchSuccess) {
                                 setTimeout(() => indicator.remove(), 1500);
                             }
                         }, selector);
-                        await page.waitForTimeout(500); // Give time for indicator to show
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
 
                         await postArea.click();
                         console.log(`✅ Clicked post creation area: ${selector}`);
@@ -1153,13 +1153,13 @@ if (switchSuccess) {
                 });
                 if (fallbackClicked) {
                     console.log('✅ Clicked fallback post creation button.');
-                    await page.waitForTimeout(500); // Give time for indicator to show
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
                     await page.screenshot({ path: 'debug-post-creation-fallback-click.png' , width: 1024, height: 768 });
                     console.log('📸 Screenshot: debug-post-creation-fallback-click.png');
                 } else {
                     throw new Error('Post creation area not found');
                 }
-                await page.waitForTimeout(2000);
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
             // Step 2: Upload video file
@@ -1211,7 +1211,7 @@ if (switchSuccess) {
 
             // Wait longer for video upload processing and modal to fully load
             console.log('⏳ Waiting longer for video processing and modal stability...');
-            await page.waitForTimeout(8000); // Increased from 3000 to 8000
+            await new Promise(resolve => setTimeout(resolve, 8000)); // Increased from 3000 to 8000
 
             // Wait for upload to be ready (look for video thumbnail or processing indicators)
             console.log('🔍 Waiting for video processing to complete...');
@@ -1245,7 +1245,7 @@ if (switchSuccess) {
                 });
 
                 if (!processingComplete) {
-                    await page.waitForTimeout(2000);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                     attempts++;
                 }
             }
@@ -1260,7 +1260,7 @@ if (switchSuccess) {
             console.log('Inputting caption BEFORE "Berikutnya" button click...');
 
             // Wait a bit more for the caption input to fully render
-            await page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // Try to find the caption input field that appears before "Berikutnya"
             // For Facebook posts, the caption input might be available immediately after upload
@@ -1323,11 +1323,11 @@ if (switchSuccess) {
                         setTimeout(() => indicator.remove(), 1500);
                     }
                 });
-                await page.waitForTimeout(500); // Give time for indicator to show
+                await new Promise(resolve => setTimeout(resolve, 500)); // Give time for indicator to show
 
                 // Click to focus and clear existing content
                 await captionInput.click({ clickCount: 1 });
-                await page.waitForTimeout(500);
+                await new Promise(resolve => setTimeout(resolve, 500));
 
                 // Clear any existing content
                 await page.keyboard.press('End');
@@ -1436,7 +1436,7 @@ if (switchSuccess) {
 
                     // Wait for visual indicator to be visible
                     console.log('📱 Waiting 5 seconds for visual indicator...');
-                    await page.waitForTimeout(5000);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
 
                     // Now click the button - this should happen after the visual flash
                     const clickResult = await page.evaluate(() => {
@@ -1465,7 +1465,7 @@ if (switchSuccess) {
                         console.log(`✅ SUCCESS! Element clicked "Berikutnya" button: "${clickResult.text}"`);
                         await page.screenshot({ path: 'debug-post-after-berikutnya-click.png' , width: 1024, height: 768 });
                         console.log('📸 Screenshot: debug-post-after-berikutnya-click.png');
-                        await page.waitForTimeout(2000);
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     } else {
                         console.log('❌ FAILED: Could not click "Berikutnya" button');
                         throw new Error('Could not click the "Berikutnya" button');
@@ -1486,7 +1486,7 @@ if (switchSuccess) {
             console.log('🔄 Now proceeding to click "KIRIM" (Post/Send) button...');
 
             // Wait for the "Kirim" button to appear after "Berikutnya" click
-            await page.waitForTimeout(3000);
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             // Step 4: Click "Kirim" button using enhanced approach
             console.log('Clicking "Kirim" button using element click...');
@@ -1577,7 +1577,7 @@ if (switchSuccess) {
 
                     // Wait for visual indicator to be visible
                     console.log('⏳ Waiting 2 seconds for visual indicator...');
-                    await page.waitForTimeout(2000);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
 
                     // Now click the button using element click
                     console.log(`🖱️ Clicking KIRIM button at coordinates (${Math.round(kirimBtnCoords.x)}, ${Math.round(kirimBtnCoords.y)})...`);
@@ -1641,7 +1641,7 @@ if (switchSuccess) {
                             });
 
                             if (!successMessage.found) {
-                                await page.waitForTimeout(2000);
+                                await new Promise(resolve => setTimeout(resolve, 2000));
                                 attempts++;
                             }
                         }
