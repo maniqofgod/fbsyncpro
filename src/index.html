@@ -49,6 +49,10 @@
                     <i class="fas fa-terminal"></i>
                     Log Aktivitas
                 </button>
+                <button class="nav-tab" data-tab="debug">
+                    <i class="fas fa-bug"></i>
+                    Last Debug
+                </button>
             </nav>
 
             <!-- Tab Content -->
@@ -488,6 +492,51 @@
                             <i class="fas fa-terminal"></i>
                             <h3>Belum ada aktivitas</h3>
                             <p>Log aktivitas akan muncul di sini saat aplikasi berjalan.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Debug Tab -->
+                <div class="tab-pane" id="debug">
+                    <div class="tab-header">
+                        <h2>Debug & Terminal Monitoring</h2>
+                        <div class="debug-actions">
+                            <button class="btn-secondary" id="refresh-screenshots-btn">
+                                <i class="fas fa-sync-alt"></i> Refresh Screenshots
+                            </button>
+                            <button class="btn-secondary" id="clear-terminal-logs-btn">
+                                <i class="fas fa-trash"></i> Clear Terminal Logs
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="debug-content">
+                        <!-- Live Terminal Logs -->
+                        <div class="debug-section">
+                            <h3><i class="fas fa-terminal"></i> Live Terminal Process</h3>
+                            <div class="terminal-monitor" id="terminal-monitor">
+                                <div class="terminal-header">
+                                    <div class="terminal-tabs">
+                                        <span class="terminal-tab active" data-tab="stdout">Standard Output</span>
+                                        <span class="terminal-tab" data-tab="stderr">Error Output</span>
+                                    </div>
+                                </div>
+                                <div class="terminal-output" id="terminal-output">
+                                    <div class="terminal-line">Terminal output will appear here when processes are running...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Latest Debug Screenshots -->
+                        <div class="debug-section">
+                            <h3><i class="fas fa-image"></i> Latest Debug Screenshots</h3>
+                            <div class="screenshots-gallery" id="screenshots-gallery">
+                                <div class="empty-state">
+                                    <i class="fas fa-camera"></i>
+                                    <h3>Belum ada screenshot</h3>
+                                    <p>Screenshot debug akan muncul di sini saat proses upload sedang berjalan.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

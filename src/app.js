@@ -99,6 +99,13 @@ function initializeElements() {
         clearLogsBtn: document.getElementById('clear-logs-btn'),
         exportLogsBtn: document.getElementById('export-logs-btn'),
 
+        // Debug Tab Elements
+        refreshScreenshotsBtn: document.getElementById('refresh-screenshots-btn'),
+        clearTerminalLogsBtn: document.getElementById('clear-terminal-logs-btn'),
+        terminalMonitor: document.getElementById('terminal-monitor'),
+        terminalOutput: document.getElementById('terminal-output'),
+        screenshotsGallery: document.getElementById('screenshots-gallery'),
+
         // Status
         statusText: document.getElementById('status-text'),
         queueStatus: document.querySelector('#queue-status'),
@@ -203,6 +210,17 @@ function setupEventListeners() {
         elements.editGenerateCaptionBtn.addEventListener('click', generateCaptionForEdit);
         elements.editAccountSelect.addEventListener('change', () => updateEditPageSelect());
         elements.editQueueStatus.addEventListener('change', () => toggleRetryCountGroup());
+
+        // Debug Tab
+        if (elements.refreshScreenshotsBtn) {
+            elements.refreshScreenshotsBtn.addEventListener('click', refreshScreenshots);
+        }
+        if (elements.clearTerminalLogsBtn) {
+            elements.clearTerminalLogsBtn.addEventListener('click', clearTerminalLogs);
+        }
+        if (elements.terminalMonitor) {
+            setupTerminalTabSwitching();
+        }
     }
 
 // Setup navigation
@@ -295,6 +313,9 @@ function updateTabContent(tabName) {
             break;
         case 'logs':
             updateLogsDisplay();
+            break;
+        case 'debug':
+            loadDebugData();
             break;
     }
 }
@@ -2415,3 +2436,223 @@ function categorizeContent(formData) {
         return 'general';
     }
 }
+
+// Debug Tab Functions
+async function loadDebugData() {
+    try {
+        // Load latest screenshots
+        await refreshScreenshots();
+
+        // Start real-time log streaming
+        startTerminalLogStreaming();
+
+        showToast('Debug data berhasil dimuat', 'info');
+    } catch (error) {
+        showToast(`Gagal memuat debug data: ${error.message}`, 'error');
+    }
+}
+
+async function refreshScreenshots() {
+    try {
+        elements.refreshScreenshotsBtn.disabled = true;
+        elements.refreshScreenshotsBtn.innerHTML = '<div class="loading"></div> Loading...';
+
+        const result = await fetch(`${API_BASE}/api/debug/screenshots`);
+        const response = await result.json();
+
+        if (response.success) {
+            updateScreenshotsGallery(response.screenshots);
+            showToast('Screenshot berhasil diperbaharui', 'success');
+        } else {
+            updateScreenshotsGallery([]);
+            showToast(`Gagal memperbaharui screenshot: ${response.error}`, 'error');
+        }
+    } catch (error) {
+        updateScreenshotsGallery([]);
+        showToast(`Error memperbaharui screenshot: ${error.message}`, 'error');
+    } finally {
+        elements.refreshScreenshotsBtn.disabled = false;
+        elements.refreshScreenshotsBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Screenshots';
+    }
+}
+
+function updateScreenshotsGallery(screenshots) {
+    const gallery = elements.screenshotsGallery;
+    if (!gallery) return;
+
+    if (!screenshots || screenshots.length === 0) {
+        gallery.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-camera"></i>
+                <h3>Belum ada screenshot</h3>
+                <p>Screenshot debug akan muncul di sini saat proses upload sedang berjalan.</p>
+            </div>
+        `;
+        return;
+    }
+
+    gallery.innerHTML = screenshots.map(screenshot => `
+        <div class="debug-screenshot">
+            <div class="screenshot-info">
+                <h4>${screenshot.step || 'Screenshot'}</h4>
+                <small>${new Date(screenshot.timestamp).toLocaleString()}</small>
+            </div>
+            <img src="${API_BASE}/api/debug/screenshots/${screenshot.filename}"
+                 alt="${screenshot.step}"
+                 onclick="openScreenshotModal('${screenshot.filename}', '${screenshot.step || 'Screenshot'}')"
+                 style="max-width: 100%; cursor: pointer; border-radius: 8px;">
+            <div class="screenshot-actions">
+                <button onclick="downloadScreenshot('${screenshot.filename}')" class="btn-secondary btn-small">
+                    <i class="fas fa-download"></i> Download
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+let logStreamingInterval = null;
+let currentLogType = 'stdout';
+
+function startTerminalLogStreaming() {
+    // Clear existing interval if any
+    if (logStreamingInterval) {
+        clearInterval(logStreamingInterval);
+    }
+
+    // Initial load
+    updateTerminalLogs();
+
+    // Set up polling every 2 seconds
+    logStreamingInterval = setInterval(async () => {
+        try {
+            await updateTerminalLogs();
+        } catch (error) {
+            console.error('Error updating terminal logs:', error);
+        }
+    }, 2000);
+}
+
+async function updateTerminalLogs() {
+    if (!elements.terminalOutput) return;
+
+    try {
+        const limit = 50; // Last 50 lines
+        const result = await fetch(`${API_BASE}/api/debug/logs?type=${currentLogType}&limit=${limit}`);
+        const response = await result.json();
+
+        if (response.success) {
+            const logs = response.logs || [];
+            elements.terminalOutput.innerHTML = logs.length > 0
+                ? logs.map(line => `<div class="terminal-line">${escapeHtml(line)}</div>`).join('')
+                : '<div class="terminal-line">No logs available yet...</div>';
+
+            // Scroll to bottom
+            elements.terminalOutput.scrollTop = elements.terminalOutput.scrollHeight;
+        }
+    } catch (error) {
+        console.error('Error fetching terminal logs:', error);
+        elements.terminalOutput.innerHTML = '<div class="terminal-line">Unable to fetch logs...</div>';
+    }
+}
+
+function setupTerminalTabSwitching() {
+    const terminalTabs = document.querySelectorAll('.terminal-tab');
+    terminalTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            // Update active tab
+            terminalTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // Update log type
+            currentLogType = tab.dataset.tab;
+
+            // Refresh logs with new type
+            if (logStreamingInterval) {
+                clearInterval(logStreamingInterval);
+            }
+            startTerminalLogStreaming();
+        });
+    });
+}
+
+async function clearTerminalLogs() {
+    try {
+        elements.clearTerminalLogsBtn.disabled = true;
+        elements.clearTerminalLogsBtn.innerHTML = '<div class="loading"></div> Clearing...';
+
+        const result = await fetch(`${API_BASE}/api/debug/logs/clear`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ type: currentLogType })
+        });
+        const response = await result.json();
+
+        if (response.success) {
+            // Clear local logs and restart streaming
+            if (elements.terminalOutput) {
+                elements.terminalOutput.innerHTML = '<div class="terminal-line">Logs cleared...</div>';
+            }
+            showToast('Terminal logs berhasil dibersihkan', 'success');
+        } else {
+            showToast(`Gagal membersihkan logs: ${response.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error membersihkan logs: ${error.message}`, 'error');
+    } finally {
+        elements.clearTerminalLogsBtn.disabled = false;
+        elements.clearTerminalLogsBtn.innerHTML = '<i class="fas fa-trash"></i> Clear Terminal Logs';
+    }
+}
+
+// Utility functions for debug
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Make debug functions globally available
+window.openScreenshotModal = function(filename, step) {
+    // Create a modal to show full-size screenshot
+    const modal = document.createElement('div');
+    modal.className = 'screenshot-modal';
+    modal.innerHTML = `
+        <div class="screenshot-modal-content">
+            <div class="screenshot-modal-header">
+                <h3>${step}</h3>
+                <button class="screenshot-modal-close" onclick="this.closest('.screenshot-modal').remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="screenshot-modal-body">
+                <img src="${API_BASE}/api/debug/screenshots/${filename}" alt="${step}">
+            </div>
+        </div>
+    `;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    document.body.appendChild(modal);
+};
+
+window.downloadScreenshot = async function(filename) {
+    try {
+        const response = await fetch(`${API_BASE}/api/debug/screenshots/${filename}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Screenshot berhasil didownload', 'success');
+    } catch (error) {
+        showToast(`Gagal download screenshot: ${error.message}`, 'error');
+    }
+};
