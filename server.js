@@ -5,6 +5,10 @@ const fs = require('fs');
 const multer = require('multer');
 const Database = require('better-sqlite3');
 const cron = require('node-cron');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 
 // Initialize Express app
 const app = express();
@@ -15,7 +19,25 @@ const dbPath = path.join(__dirname, 'database.sqlite');
 const db = new Database(dbPath);
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
+app.use(cookieParser());
+
+// Session configuration with persistent cookies
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'reelsync-pro-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        httpOnly: true, // Prevent XSS attacks
+        secure: false, // Set to true for HTTPS in production
+        sameSite: 'lax' // Helps with CSRF protection
+    }
+}));
+
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
@@ -85,13 +107,23 @@ async function initializeModules() {
 }
 
 // Database helper functions
-function getSettings() {
+function getSettings(userId) {
     try {
         const settings = {};
-        const rows = db.prepare('SELECT key, value FROM settings').all();
-        rows.forEach(row => {
+        // First try to get user-specific settings
+        const userRows = db.prepare('SELECT key, value FROM user_settings WHERE user_id = ?').all(userId);
+        userRows.forEach(row => {
             settings[row.key] = row.value;
         });
+
+        // If no user settings, get from global settings
+        if (Object.keys(settings).length === 0) {
+            const globalRows = db.prepare('SELECT key, value FROM settings').all();
+            globalRows.forEach(row => {
+                settings[row.key] = row.value;
+            });
+        }
+
         return {
             uploadDelay: parseInt(settings.uploadDelay) || 30000,
             maxRetries: parseInt(settings.maxRetries) || 3,
@@ -111,9 +143,9 @@ function getSettings() {
     }
 }
 
-function updateSetting(key, value) {
+function updateSetting(userId, key, value) {
     try {
-        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value.toString());
+        db.prepare('INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?, ?, ?)').run(userId, key, value.toString());
         return true;
     } catch (error) {
         console.error('Error updating setting:', error);
@@ -121,13 +153,13 @@ function updateSetting(key, value) {
     }
 }
 
-function getQueueItems() {
+function getQueueItems(userId) {
     try {
-        const items = db.prepare('SELECT * FROM queue ORDER BY created_at DESC').all();
+        const items = db.prepare('SELECT * FROM queue WHERE user_id = ? ORDER BY created_at DESC').all(userId);
 
         // Add cooldown information for each item
         const now = new Date();
-        const settings = getSettings();
+        const settings = getSettings(userId);
         const cooldownMap = new Map();
 
         // Calculate last completion time for each account+page combination
@@ -165,18 +197,19 @@ function getQueueItems() {
     }
 }
 
-function addQueueItem(item) {
+function addQueueItem(item, userId) {
     try {
         const stmt = db.prepare(`
             INSERT INTO queue (
-                id, account_name, page_id, page_name, type, file_path, file_name,
+                id, user_id, account_name, page_id, page_name, type, file_path, file_name,
                 caption, status, scheduled_time, actual_upload_time, completion_time,
                 processing_time, retry_count, error_message, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         stmt.run(
             item.id,
+            userId,
             item.account,
             item.page,
             item.pageName || '',
@@ -266,6 +299,264 @@ function deleteQueueItem(itemId) {
     }
 }
 
+async function testAccountCookie(name, type, cookie) {
+    try {
+        // Use AccountManager to test the account
+        const accountManager = new AccountManager();
+        const result = await accountManager.testAccount({
+            name: name || 'Test Account',
+            type: type || 'personal',
+            cookie: cookie
+        });
+
+        return {
+            success: result.success,
+            pages: result.pages || [],
+            message: result.message,
+            error: result.error
+        };
+    } catch (error) {
+        console.error('Cookie test error:', error);
+        return {
+            success: false,
+            pages: [],
+            message: 'Test failed',
+            error: error.message
+        };
+    }
+}
+
+// User Authentication Helper Functions
+function registerUser(username, password, displayName, role = 'user') {
+    try {
+        // Check if user already exists
+        const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+        if (existingUser) {
+            return { success: false, error: 'Username already exists' };
+        }
+
+        // Check if this is the first user - make them admin
+        const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+        if (userCount.count === 0) {
+            role = 'admin';
+        }
+
+        // Hash password
+        const saltRounds = 10;
+        const hashedPassword = bcrypt.hashSync(password, saltRounds);
+
+        // Insert new user
+        const userId = uuidv4();
+        const stmt = db.prepare(`
+            INSERT INTO users (id, username, password_hash, display_name, role, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run(userId, username, hashedPassword, displayName || username, role, new Date().toISOString());
+
+        return { success: true, userId, role };
+    } catch (error) {
+        console.error('Error registering user:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function changeUserPassword(userId, currentPassword, newPassword) {
+    try {
+        // First, get the current user
+        const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId);
+        if (!user) {
+            return { success: false, error: 'User not found' };
+        }
+
+        // Verify current password
+        const isValidCurrentPassword = bcrypt.compareSync(currentPassword, user.password_hash);
+        if (!isValidCurrentPassword) {
+            return { success: false, error: 'Current password is incorrect' };
+        }
+
+        // Hash new password
+        const saltRounds = 10;
+        const hashedNewPassword = bcrypt.hashSync(newPassword, saltRounds);
+
+        // Update password
+        const stmt = db.prepare(`
+            UPDATE users
+            SET password_hash = ?, updated_at = ?
+            WHERE id = ?
+        `);
+
+        const result = stmt.run(hashedNewPassword, new Date().toISOString(), userId);
+
+        if (result.changes > 0) {
+            return { success: true, message: 'Password changed successfully' };
+        } else {
+            return { success: false, error: 'Failed to update password' };
+        }
+    } catch (error) {
+        console.error('Error changing password:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function authenticateUser(username, password) {
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+        if (!user) {
+            return { success: false, error: 'Invalid credentials' };
+        }
+
+        // Verify password
+        const isValidPassword = bcrypt.compareSync(password, user.password_hash);
+        if (!isValidPassword) {
+            return { success: false, error: 'Invalid credentials' };
+        }
+
+        // Update last login
+        db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
+
+        return { success: true, user: { id: user.id, username: user.username, displayName: user.display_name, role: user.role } };
+    } catch (error) {
+        console.error('Error authenticating user:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function getUserById(userId) {
+    try {
+        return db.prepare('SELECT id, username, display_name, role FROM users WHERE id = ?').get(userId);
+    } catch (error) {
+        console.error('Error getting user by id:', error);
+        return null;
+    }
+}
+
+// Authentication Middleware
+function requireAuth(req, res, next) {
+    if (req.session && req.session.user) {
+        // User is authenticated
+        req.user = req.session.user;
+        return next();
+    }
+
+    // Not authenticated
+    return res.status(401).json({ error: 'Authentication required' });
+}
+
+// Authentication Routes (public - no auth required)
+app.post('/auth/login', (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ success: false, error: 'Username and password required' });
+        }
+
+        const result = authenticateUser(username, password);
+        if (!result.success) {
+            return res.status(401).json({ success: false, error: result.error });
+        }
+
+        // Store user in session
+        req.session.user = result.user;
+        req.session.userId = result.user.id;
+
+        res.json({
+            success: true,
+            user: result.user,
+            message: 'Login successful'
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ success: false, error: 'Login failed' });
+    }
+});
+
+app.post('/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            console.error('Logout error:', err);
+            res.status(500).json({ success: false, error: 'Logout failed' });
+        } else {
+            res.clearCookie('connect.sid'); // Clear session cookie
+            res.json({ success: true, message: 'Logout successful' });
+        }
+    });
+});
+
+app.get('/auth/check', (req, res) => {
+    if (req.session && req.session.user) {
+        res.json({ authenticated: true, user: req.session.user });
+    } else {
+        res.json({ authenticated: false });
+    }
+});
+
+app.post('/auth/register', (req, res) => {
+    try {
+        const { username, password, displayName } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ success: false, error: 'Username and password required' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
+        }
+
+        const result = registerUser(username, password, displayName);
+
+        if (!result.success) {
+            return res.status(400).json({ success: false, error: result.error });
+        }
+
+        // Auto-login after registration
+        const loginResult = authenticateUser(username, password);
+        if (loginResult.success) {
+            req.session.user = loginResult.user;
+            req.session.userId = loginResult.user.id;
+        }
+
+        res.json({
+            success: true,
+            userId: result.userId,
+            message: 'User registered successfully'
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ success: false, error: 'Registration failed' });
+    }
+});
+
+app.post('/auth/change-password', requireAuth, (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.id;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, error: 'Current password and new password required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ success: false, error: 'New password must be at least 6 characters long' });
+        }
+
+        const result = changeUserPassword(userId, currentPassword, newPassword);
+
+        if (!result.success) {
+            return res.status(400).json({ success: false, error: result.error });
+        }
+
+        res.json({
+            success: true,
+            message: result.message
+        });
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ success: false, error: 'Change password failed' });
+    }
+});
+
 // API Routes
 
 // Serve main HTML
@@ -273,18 +564,42 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'src', 'index.html'));
 });
 
-// Account Management Routes
+// Apply authentication middleware to all API routes
+app.use('/api', requireAuth);
+
+// Admin-only middleware
+function requireAdmin(req, res, next) {
+    if (req.session && req.session.user) {
+        // Check if user is admin
+        const user = req.session.user;
+        if (user.role === 'admin') {
+            return next();
+        }
+    }
+
+    // Not admin
+    return res.status(403).json({ error: 'Admin access required' });
+}
+
+// Account Management Routes (Per User)
 app.get('/api/accounts', async (req, res) => {
     try {
-        const accountManager = new AccountManager();
-        const accounts = accountManager.getAllAccounts();
+        const userId = req.user.id;
+        const accounts = db.prepare('SELECT id, name, type, pages_data, is_valid, created_at, updated_at FROM facebook_accounts WHERE user_id = ? ORDER BY created_at DESC').all(userId);
 
-        // Remove cookies from response for security
+        // Parse pages_data and remove cookies from response for security
         const safeAccounts = accounts.map(account => {
-            const { cookie, ...accountWithoutCookie } = account;
+            const pages = account.pages_data ? JSON.parse(account.pages_data) : [];
             return {
-                ...accountWithoutCookie,
-                hasCookie: !!cookie
+                id: account.id,
+                name: account.name,
+                type: account.type,
+                pages: pages,
+                pagesCount: pages.length,
+                valid: account.is_valid === 1,
+                hasCookie: account.is_valid === 1,
+                created_at: account.created_at,
+                updated_at: account.updated_at
             };
         });
 
@@ -297,21 +612,51 @@ app.get('/api/accounts', async (req, res) => {
 
 app.post('/api/accounts', async (req, res) => {
     try {
+        const userId = req.user.id;
         const { name, type, cookie } = req.body;
-        const accountManager = new AccountManager();
 
-        const result = await accountManager.saveAccount({ name, type, cookie });
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, error: 'Account name is required' });
+        }
 
-        if (result.success) {
+        // Check if account name already exists for this user
+        const existingAccount = db.prepare('SELECT id FROM facebook_accounts WHERE user_id = ? AND name = ?').get(userId, name);
+        if (existingAccount) {
+            return res.status(400).json({ success: false, error: 'Account name already exists' });
+        }
+
+        let isValid = 0;
+        let pagesData = null;
+
+        // Validate cookie if provided and test account
+        if (cookie && cookie.trim()) {
+            try {
+                const testResult = await testAccountCookie(name, type, cookie);
+                isValid = testResult.success ? 1 : 0;
+                pagesData = testResult.success && testResult.pages ? JSON.stringify(testResult.pages) : null;
+            } catch (testError) {
+                console.error('Cookie validation error:', testError);
+                // Account creation still succeeds even if cookie validation fails
+                isValid = 0;
+                pagesData = null;
+            }
+        }
+
+        // Insert new account
+        const result = db.prepare(`
+            INSERT INTO facebook_accounts (user_id, name, type, cookie, pages_data, is_valid, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(userId, name, type || 'personal', cookie, pagesData, isValid, new Date().toISOString(), new Date().toISOString());
+
+        if (result.changes > 0) {
             res.json({
                 success: true,
                 account: name,
-                validation: result.validation,
-                isEdit: result.isEdit,
-                pagesCount: result.validation?.pages?.length || 0
+                isEdit: false,
+                pagesCount: pagesData ? JSON.parse(pagesData).length : 0
             });
         } else {
-            res.status(400).json({ success: false, error: result.error });
+            res.status(500).json({ success: false, error: 'Failed to create account' });
         }
     } catch (error) {
         console.error('Error saving account:', error);
@@ -321,26 +666,52 @@ app.post('/api/accounts', async (req, res) => {
 
 app.put('/api/accounts/:accountName', async (req, res) => {
     try {
+        const userId = req.user.id;
         const { accountName } = req.params;
         const { cookie } = req.body;
-        const accountManager = new AccountManager();
 
-        const result = await accountManager.saveAccount({
-            name: accountName,
-            type: 'personal',
-            cookie: cookie
-        });
+        // Find existing account for this user
+        const account = db.prepare('SELECT id, cookie FROM facebook_accounts WHERE user_id = ? AND name = ?').get(userId, accountName);
+        if (!account) {
+            return res.status(404).json({ success: false, error: 'Account not found' });
+        }
 
-        if (result.success) {
+        let isValid = 0;
+        let pagesData = null;
+
+        // Validate cookie if provided and different from existing
+        if (cookie && cookie !== account.cookie) {
+            try {
+                const testResult = await testAccountCookie(accountName, 'personal', cookie);
+                isValid = testResult.success ? 1 : 0;
+                pagesData = testResult.success && testResult.pages ? JSON.stringify(testResult.pages) : null;
+            } catch (testError) {
+                console.error('Cookie validation error:', testError);
+                isValid = 0;
+                pagesData = null;
+            }
+        } else if (!cookie) {
+            // If no cookie provided, mark as invalid
+            isValid = 0;
+            pagesData = null;
+        }
+
+        // Update account
+        const result = db.prepare(`
+            UPDATE facebook_accounts
+            SET cookie = ?, pages_data = ?, is_valid = ?, updated_at = ?
+            WHERE user_id = ? AND name = ?
+        `).run(cookie, pagesData, isValid, new Date().toISOString(), userId, accountName);
+
+        if (result.changes > 0) {
             res.json({
                 success: true,
                 account: accountName,
-                validation: result.validation,
-                isEdit: result.isEdit,
-                pagesCount: result.validation?.pages?.length || 0
+                isEdit: true,
+                pagesCount: pagesData ? JSON.parse(pagesData).length : 0
             });
         } else {
-            res.status(400).json({ success: false, error: result.error });
+            res.status(500).json({ success: false, error: 'Failed to update account' });
         }
     } catch (error) {
         console.error('Error updating account:', error);
@@ -350,15 +721,15 @@ app.put('/api/accounts/:accountName', async (req, res) => {
 
 app.delete('/api/accounts/:accountName', async (req, res) => {
     try {
+        const userId = req.user.id;
         const { accountName } = req.params;
-        const accountManager = new AccountManager();
 
-        const result = await accountManager.deleteAccount(accountName);
+        const result = db.prepare('DELETE FROM facebook_accounts WHERE user_id = ? AND name = ?').run(userId, accountName);
 
-        if (result.success) {
+        if (result.changes > 0) {
             res.json({ success: true });
         } else {
-            res.status(400).json({ success: false, error: result.error });
+            res.status(404).json({ success: false, error: 'Account not found' });
         }
     } catch (error) {
         console.error('Error deleting account:', error);
@@ -391,36 +762,34 @@ app.post('/api/accounts/test', async (req, res) => {
     }
 });
 
-// Queue Management Routes
+// Queue Management Routes (Per User)
 app.get('/api/queue', (req, res) => {
     try {
-        // Use globalQueueProcessor for proper data transformation
-        let queue = [];
-        if (globalQueueProcessor) {
-            queue = globalQueueProcessor.getQueue();
-        } else {
-            // Fallback to raw database query with transformation
-            const rawQueue = getQueueItems();
-            queue = rawQueue.map(item => ({
-                id: item.id,
-                account: item.account_name,
-                page: item.page_id,
-                pageName: item.page_name,
-                type: item.type,
-                file: item.file_path,
-                fileName: item.file_name,
-                caption: item.caption,
-                status: item.status,
-                schedule: item.scheduled_time,
-                actualUploadTime: item.actual_upload_time,
-                completionTime: item.completion_time,
-                processingTime: item.processing_time,
-                attempts: item.retry_count,
-                errorMessage: item.error_message,
-                createdAt: item.created_at,
-                updatedAt: item.updated_at
-            }));
-        }
+        const userId = req.user.id;
+        // Get queue items for this user
+        const userQueue = getQueueItems(userId);
+
+        // Transform for frontend compatibility
+        const queue = userQueue.map(item => ({
+            id: item.id,
+            account: item.account_name,
+            page: item.page_id,
+            pageName: item.page_name,
+            type: item.type,
+            file: item.file_path,
+            fileName: item.file_name,
+            caption: item.caption,
+            status: item.status,
+            schedule: item.scheduled_time,
+            actualUploadTime: item.actual_upload_time,
+            completionTime: item.completion_time,
+            processingTime: item.processing_time,
+            attempts: item.retry_count,
+            errorMessage: item.error_message,
+            createdAt: item.created_at,
+            updatedAt: item.updated_at
+        }));
+
         res.json(queue);
     } catch (error) {
         console.error('Error getting queue:', error);
@@ -430,6 +799,7 @@ app.get('/api/queue', (req, res) => {
 
 app.post('/api/queue', (req, res) => {
     try {
+        const userId = req.user.id;
         const formData = req.body;
         const queueItem = {
             id: Date.now().toString(36) + Math.random().toString(36).substr(2),
@@ -445,7 +815,7 @@ app.post('/api/queue', (req, res) => {
             created_at: new Date().toISOString()
         };
 
-        if (addQueueItem(queueItem)) {
+        if (addQueueItem(queueItem, userId)) {
             res.json({ success: true, id: queueItem.id });
         } else {
             res.status(500).json({ success: false, error: 'Failed to add to queue' });
@@ -458,8 +828,15 @@ app.post('/api/queue', (req, res) => {
 
 app.put('/api/queue/:itemId', (req, res) => {
     try {
+        const userId = req.user.id;
         const { itemId } = req.params;
         const updates = req.body;
+
+        // Verify the queue item belongs to this user
+        const item = db.prepare('SELECT user_id FROM queue WHERE id = ?').get(itemId);
+        if (!item || item.user_id !== userId) {
+            return res.status(404).json({ success: false, error: 'Queue item not found' });
+        }
 
         if (updateQueueItem(itemId, updates)) {
             res.json({ success: true });
@@ -474,7 +851,14 @@ app.put('/api/queue/:itemId', (req, res) => {
 
 app.delete('/api/queue/:itemId', (req, res) => {
     try {
+        const userId = req.user.id;
         const { itemId } = req.params;
+
+        // Verify the queue item belongs to this user before deleting
+        const item = db.prepare('SELECT user_id FROM queue WHERE id = ?').get(itemId);
+        if (!item || item.user_id !== userId) {
+            return res.status(404).json({ success: false, error: 'Queue item not found' });
+        }
 
         if (deleteQueueItem(itemId)) {
             res.json({ success: true });
@@ -490,23 +874,24 @@ app.delete('/api/queue/:itemId', (req, res) => {
 // Queue Control Routes
 app.post('/api/queue/start', async (req, res) => {
     try {
-        console.log('🚀 Starting queue processing...');
+        const userId = req.user.id;
+        console.log(`🚀 Starting queue processing for user: ${userId}`);
 
         if (!globalQueueProcessor) {
             return res.status(500).json({ success: false, error: 'Queue processor not initialized' });
         }
 
         // Update settings before starting
-        const settings = getSettings();
-        console.log(`⚙️ Current settings:`, settings);
+        const settings = getSettings(userId);
+        console.log(`⚙️ Current settings for user ${userId}:`, settings);
 
         globalQueueProcessor.updateOptions({
             showBrowser: settings.showBrowser
         });
 
-        // Check current queue status
-        const currentQueue = getQueueItems();
-        console.log(`📊 Current queue status: ${currentQueue.length} items`);
+        // Check current queue status for this user
+        const currentQueue = getQueueItems(userId);
+        console.log(`📊 Current queue status for user ${userId}: ${currentQueue.length} items`);
 
         // Start queue processing
         const result = await globalQueueProcessor.startQueue();
@@ -527,7 +912,8 @@ app.post('/api/queue/start', async (req, res) => {
 
 app.post('/api/queue/process-manually', async (req, res) => {
     try {
-        console.log('🔄 Manual queue processing triggered...');
+        const userId = req.user.id;
+        console.log(`🔄 Manual queue processing triggered for user: ${userId}`);
 
         if (!globalQueueProcessor) {
             return res.status(500).json({ success: false, error: 'Queue processor not available' });
@@ -536,8 +922,8 @@ app.post('/api/queue/process-manually', async (req, res) => {
         // Process immediate uploads manually
         await globalQueueProcessor.processImmediateUploads();
 
-        // Get updated queue status
-        const queue = getQueueItems();
+        // Get updated queue status for this user
+        const queue = getQueueItems(userId);
         const stats = globalQueueProcessor.getQueueStats();
 
         console.log(`📊 Manual processing completed. Queue stats:`, stats);
@@ -576,10 +962,11 @@ app.post('/api/upload', upload.single('video'), (req, res) => {
     }
 });
 
-// Settings Routes
+// Settings Routes (Per User)
 app.get('/api/settings', (req, res) => {
     try {
-        const settings = getSettings();
+        const userId = req.user.id;
+        const settings = getSettings(userId);
         res.json(settings);
     } catch (error) {
         console.error('Error getting settings:', error);
@@ -589,13 +976,14 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
     try {
+        const userId = req.user.id;
         const { uploadDelay, maxRetries, autoStartQueue, showNotifications, showBrowser } = req.body;
 
-        updateSetting('uploadDelay', uploadDelay);
-        updateSetting('maxRetries', maxRetries);
-        updateSetting('autoStartQueue', autoStartQueue);
-        updateSetting('showNotifications', showNotifications);
-        updateSetting('showBrowser', showBrowser);
+        updateSetting(userId, 'uploadDelay', uploadDelay);
+        updateSetting(userId, 'maxRetries', maxRetries);
+        updateSetting(userId, 'autoStartQueue', autoStartQueue);
+        updateSetting(userId, 'showNotifications', showNotifications);
+        updateSetting(userId, 'showBrowser', showBrowser);
 
         // Immediately sync settings with globalQueueProcessor if initialized
         if (globalQueueProcessor) {
@@ -690,7 +1078,8 @@ app.post('/api/debug/browser-visibility', async (req, res) => {
 // Gemini AI Routes
 app.get('/api/gemini/apis', async (req, res) => {
     try {
-        const apis = await geminiStore.getAllApis();
+        const userId = req.user.id;
+        const apis = await geminiStore.getAllApis(userId);
         res.json(apis);
     } catch (error) {
         console.error('Error getting Gemini APIs:', error);
@@ -700,6 +1089,7 @@ app.get('/api/gemini/apis', async (req, res) => {
 
 app.post('/api/gemini/apis', (req, res) => {
     try {
+        const userId = req.user.id;
         const { name, apiKey } = req.body;
 
         if (!name || !name.trim()) {
@@ -717,8 +1107,12 @@ app.post('/api/gemini/apis', (req, res) => {
                 return res.status(400).json({ success: false, error: 'Invalid API key' });
             }
 
-            const result = geminiStore.addApi(apiKey, name);
-            res.json({ success: true, api: result });
+            geminiStore.addApi(apiKey, name, userId).then(result => {
+                res.json({ success: true, api: result });
+            }).catch(error => {
+                console.error('Error saving Gemini API:', error);
+                res.status(500).json({ success: false, error: error.message });
+            });
         }).catch(error => {
             console.error('Error validating API key:', error);
             res.status(500).json({ success: false, error: error.message });
@@ -731,14 +1125,18 @@ app.post('/api/gemini/apis', (req, res) => {
 
 app.delete('/api/gemini/apis/:apiId', (req, res) => {
     try {
+        const userId = req.user.id;
         const { apiId } = req.params;
-        const result = geminiStore.deleteApi(apiId);
-
-        if (result) {
-            res.json({ success: true });
-        } else {
-            res.status(404).json({ success: false, error: 'API not found' });
-        }
+        geminiStore.deleteApi(apiId, userId).then(result => {
+            if (result) {
+                res.json({ success: true });
+            } else {
+                res.status(404).json({ success: false, error: 'API not found' });
+            }
+        }).catch(error => {
+            console.error('Error deleting Gemini API:', error);
+            res.status(500).json({ success: false, error: error.message });
+        });
     } catch (error) {
         console.error('Error deleting Gemini API:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -771,11 +1169,12 @@ app.post('/api/gemini/test-key', (req, res) => {
 
 app.post('/api/gemini/generate-caption', async (req, res) => {
     try {
+        const userId = req.user.id;
         const { fileName, language } = req.body;
 
-        console.log(`🤖 Generating caption for: ${fileName} in ${language}`);
+        console.log(`🤖 Generating caption for: ${fileName} in ${language} (User: ${userId})`);
 
-        const result = await geminiService.generateContent(fileName, null, { language });
+        const result = await geminiService.generateContent(fileName, userId, { language });
 
         if (result.generated) {
             console.log('✅ Caption generated successfully');
@@ -805,7 +1204,8 @@ app.post('/api/gemini/generate-caption', async (req, res) => {
 
 app.get('/api/gemini/stats', async (req, res) => {
     try {
-        const stats = await geminiStore.getUsageStats();
+        const userId = req.user.id;
+        const stats = await geminiStore.getUsageStats(userId);
         res.json(stats || {
             totalRequests: 0,
             successfulRequests: 0,
@@ -833,14 +1233,15 @@ app.get('/api/gemini/stats', async (req, res) => {
 app.get('/api/analytics', async (req, res) => {
     try {
         const timeRange = req.query.timeRange || '30d';
+        const userId = req.user.id;
 
-        console.log(`📊 Getting analytics data for time range: ${timeRange}`);
+        console.log(`📊 Getting analytics data for time range: ${timeRange} (User: ${userId})`);
 
         if (!globalAnalyticsManager) {
             globalAnalyticsManager = new AnalyticsManager();
         }
 
-        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange);
+        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange, userId);
 
         if (dashboardData) {
             console.log('✅ Analytics data retrieved successfully');
@@ -957,8 +1358,249 @@ cron.schedule('*/30 * * * * *', async () => {
     }
 });
 
-// Debug Routes
-app.get('/api/debug/screenshots', (req, res) => {
+// Admin User Management Routes
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+    try {
+        const users = db.prepare('SELECT id, username, display_name, role, last_login, created_at FROM users ORDER BY created_at DESC').all();
+
+        // Don't return sensitive information like password_hash
+        const safeUsers = users.map(user => ({
+            id: user.id,
+            username: user.username,
+            displayName: user.display_name,
+            role: user.role,
+            lastLogin: user.last_login,
+            createdAt: user.created_at
+        }));
+
+        // Return consistent response format
+        res.json({
+            success: true,
+            users: safeUsers
+        });
+    } catch (error) {
+        console.error('Error getting users:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Admin Account Management Routes - View all accounts from all users
+app.get('/api/admin/accounts', requireAdmin, (req, res) => {
+    try {
+        // Get all Facebook accounts with user information
+        const accounts = db.prepare(`
+            SELECT
+                fa.id,
+                fa.user_id,
+                fa.name,
+                fa.type,
+                fa.pages_data,
+                fa.is_valid,
+                fa.created_at,
+                fa.updated_at,
+                u.username,
+                u.display_name
+            FROM facebook_accounts fa
+            JOIN users u ON fa.user_id = u.id
+            ORDER BY fa.updated_at DESC
+        `).all();
+
+        // Parse pages_data and remove cookies from response for security
+        const safeAccounts = accounts.map(account => {
+            const pages = account.pages_data ? JSON.parse(account.pages_data) : [];
+            return {
+                id: account.id,
+                userId: account.user_id,
+                name: account.name,
+                type: account.type,
+                pages: pages,
+                pagesCount: pages.length,
+                valid: account.is_valid === 1,
+                created_at: account.created_at,
+                updated_at: account.updated_at,
+                ownerUsername: account.username,
+                ownerDisplayName: account.display_name || account.username
+            };
+        });
+
+        res.json({
+            success: true,
+            accounts: safeAccounts
+        });
+    } catch (error) {
+        console.error('Error getting admin accounts:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+function deleteUser(userId) {
+    try {
+        // Don't allow deleting the current logged-in admin
+        const currentUser = getUserById(userId);
+        if (currentUser && currentUser.role === 'admin') {
+            const adminCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ?').get('admin');
+            if (adminCount.count <= 1) {
+                return { success: false, error: 'Cannot delete the last admin user' };
+            }
+        }
+
+        // Delete user's data (this will be handled by foreign key constraints)
+        const result = db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+        if (result.changes > 0) {
+            return { success: true };
+        } else {
+            return { success: false, error: 'User not found' };
+        }
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+app.post('/api/admin/users', requireAdmin, (req, res) => {
+    try {
+        const { username, password, displayName, role = 'user' } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ success: false, error: 'Username and password required' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
+        }
+
+        if (!['user', 'admin'].includes(role)) {
+            return res.status(400).json({ success: false, error: 'Invalid role. Must be "user" or "admin"' });
+        }
+
+        const result = registerUser(username, password, displayName, role);
+
+        if (!result.success) {
+            return res.status(400).json({ success: false, error: result.error });
+        }
+
+        res.json({
+            success: true,
+            userId: result.userId,
+            message: `User ${username} created successfully`
+        });
+    } catch (error) {
+        console.error('Error creating user:', error);
+        res.status(500).json({ success: false, error: 'Failed to create user' });
+    }
+});
+
+app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
+    try {
+        const { userId: targetUserId } = req.params;
+        const currentUserId = req.user.id;
+
+        if (targetUserId === currentUserId) {
+            return res.status(400).json({ success: false, error: 'Cannot delete your own account' });
+        }
+
+        const result = deleteUser(targetUserId);
+
+        if (!result.success) {
+            return res.status(400).json({ success: false, error: result.error });
+        }
+
+        res.json({ success: true, message: 'User deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete user' });
+    }
+});
+
+app.put('/api/admin/users/:userId/role', requireAdmin, (req, res) => {
+    try {
+        const { userId: targetUserId } = req.params;
+        const { role } = req.body;
+        const currentUserId = req.user.id;
+
+        if (!['user', 'admin'].includes(role)) {
+            return res.status(400).json({ success: false, error: 'Invalid role. Must be "user" or "admin"' });
+        }
+
+        // Prevent changing own role to user if it would leave no admins
+        if (targetUserId === currentUserId && role === 'user') {
+            const adminCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ? AND id != ?').get('admin', currentUserId);
+            if (adminCount.count === 0) {
+                return res.status(400).json({ success: false, error: 'Cannot change role to user when you are the only admin' });
+            }
+        }
+
+        const result = db.prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(role, new Date().toISOString(), targetUserId);
+
+        if (result.changes > 0) {
+            res.json({ success: true, message: `User role updated to ${role}` });
+        } else {
+            res.status(404).json({ success: false, error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Error updating user role:', error);
+        res.status(500).json({ success: false, error: 'Failed to update user role' });
+    }
+});
+
+// Admin System Settings Routes
+app.get('/api/admin/settings', requireAdmin, (req, res) => {
+    try {
+        // Get system-wide settings (not user-specific)
+        const globalRows = db.prepare('SELECT key, value FROM settings').all();
+
+        const settings = {};
+        globalRows.forEach(row => {
+            settings[row.key] = row.value;
+        });
+
+        res.json({
+            success: true,
+            settings: {
+                showBrowser: settings.showBrowser === 'true'
+            }
+        });
+    } catch (error) {
+        console.error('Error getting admin settings:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+app.put('/api/admin/settings', requireAdmin, (req, res) => {
+    try {
+        const { showBrowser } = req.body;
+
+        // Update global system settings
+        const result1 = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('showBrowser', showBrowser.toString());
+
+        // Immediately sync settings with globalQueueProcessor if initialized
+        if (globalQueueProcessor) {
+            console.log('🔄 Syncing updated admin settings with QueueProcessor...');
+            globalQueueProcessor.updateOptions({
+                showBrowser: showBrowser
+            });
+            console.log('✅ QueueProcessor admin settings updated');
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error saving admin settings:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Debug Routes (Admin-only)
+app.get('/api/debug/screenshots', requireAdmin, (req, res) => {
     try {
         const screenshotsDir = path.join(__dirname);
 

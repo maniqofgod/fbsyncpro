@@ -15,6 +15,15 @@
                 <h1><i class="fab fa-facebook"></i> ReelSync Pro</h1>
                 <span class="version">v1.0.0 (Web)</span>
             </div>
+            <div class="header-right">
+                <span id="user-info" class="user-info">
+                    <i class="fas fa-user-circle"></i>
+                    <span id="user-display-name"></span>
+                </span>
+                <button class="btn-secondary logout-btn" id="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
         </header>
 
         <!-- Main Content -->
@@ -40,6 +49,10 @@
                 <button class="nav-tab" data-tab="gemini">
                     <i class="fas fa-robot"></i>
                     AI Caption
+                </button>
+                <button class="nav-tab" data-tab="admin" id="admin-tab" style="display: none;">
+                    <i class="fas fa-crown"></i>
+                    Admin Panel
                 </button>
                 <button class="nav-tab" data-tab="settings">
                     <i class="fas fa-cog"></i>
@@ -418,6 +431,89 @@
                     </div>
                 </div>
 
+                <!-- Admin Tab -->
+                <div class="tab-pane" id="admin">
+                    <div class="tab-header">
+                        <h2>Admin Panel - Manajemen User</h2>
+                        <button class="btn-primary" id="add-user-btn">
+                            <i class="fas fa-user-plus"></i> Tambah User Baru
+                        </button>
+                    </div>
+
+                    <div class="admin-stats">
+                        <div class="stat-card">
+                            <span class="stat-number" id="total-users">0</span>
+                            <span class="stat-label">Total Users</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="active-users">0</span>
+                            <span class="stat-label">Active Today</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="total-queues">0</span>
+                            <span class="stat-label">Total Queue Items</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-number" id="total-accounts">0</span>
+                            <span class="stat-label">Total Accounts</span>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3>System Settings</h3>
+                        <div class="settings-form">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="admin-show-browser">
+                                    <span class="checkbox-custom"></span>
+                                    Tampilkan browser saat upload (untuk monitoring)
+                                </label>
+                                <small class="form-help">Jika dicentang, browser akan terlihat saat upload. Jika tidak, browser akan berjalan di background.</small>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn-primary" id="save-admin-settings-btn">
+                                    <i class="fas fa-save"></i> Simpan Pengaturan Sistem
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3>Manajemen Akun Facebook (Semua User)</h3>
+                        <div class="admin-accounts-list" id="admin-accounts-list">
+                            <div class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <h3>Loading accounts...</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-section">
+                        <h3>Users List</h3>
+                        <div class="user-table-container">
+                            <table class="user-table" id="user-table">
+                                <thead>
+                                    <tr>
+                                        <th>Username</th>
+                                        <th>Display Name</th>
+                                        <th>Role</th>
+                                        <th>Created</th>
+                                        <th>Last Login</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-table-body">
+                                    <!-- Users will be populated here -->
+                                </tbody>
+                            </table>
+                            <div class="empty-state" id="user-empty-state">
+                                <i class="fas fa-users"></i>
+                                <h3>Loading users...</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Settings Tab -->
                 <div class="tab-pane" id="settings">
                     <div class="tab-header">
@@ -453,14 +549,7 @@
                             </label>
                         </div>
 
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="show-browser">
-                                <span class="checkbox-custom"></span>
-                                Tampilkan browser saat upload (untuk monitoring)
-                            </label>
-                            <small class="form-help">Jika dicentang, browser akan terlihat saat upload. Jika tidak, browser akan berjalan di background.</small>
-                        </div>
+
 
                         <div class="form-actions">
                             <button type="button" class="btn-secondary" id="reset-settings-btn">
@@ -471,6 +560,31 @@
                             </button>
                         </div>
                     </form>
+
+                    <!-- Change Password Section -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-key"></i> Ubah Password</h3>
+                        <form class="settings-form" id="change-password-form">
+                            <div class="form-group">
+                                <label for="current-password">Password Saat Ini:</label>
+                                <input type="password" id="current-password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="new-password">Password Baru:</label>
+                                <input type="password" id="new-password" required minlength="6">
+                                <small class="form-help">Minimal 6 karakter</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="confirm-new-password">Konfirmasi Password Baru:</label>
+                                <input type="password" id="confirm-new-password" required>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">
+                                    <i class="fas fa-save"></i> Ubah Password
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
 
                 <!-- Logs Tab -->
@@ -554,6 +668,61 @@
                 <span class="status-text" id="queue-status">Antrian: 0 item</span>
             </div>
         </footer>
+    </div>
+
+    <!-- Login Overlay (shown when not authenticated) -->
+    <div id="login-overlay" class="login-overlay" style="display: none;">
+        <div class="login-modal">
+            <div class="login-header">
+                <h2>ReelSync Pro - Login</h2>
+                <p>Masuk ke akun Anda untuk melanjutkan</p>
+            </div>
+            <form class="login-form" id="login-form">
+                <div class="tabs">
+                    <button type="button" class="tab active" data-tab="login">Masuk</button>
+                    <button type="button" class="tab" data-tab="register">Daftar</button>
+                </div>
+                <div class="tab-content">
+                    <div class="tab-pane active" id="login-tab">
+                        <div class="form-group">
+                            <label for="login-username">Username:</label>
+                            <input type="text" id="login-username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="login-password">Password:</label>
+                            <input type="password" id="login-password" required>
+                        </div>
+                        <button type="submit" class="login-btn" id="login-btn">
+                            <i class="fas fa-sign-in-alt"></i> Masuk
+                        </button>
+                    </div>
+                    <div class="tab-pane" id="register-tab">
+                        <div class="form-group">
+                            <label for="register-username">Username:</label>
+                            <input type="text" id="register-username">
+                        </div>
+                        <div class="form-group">
+                            <label for="register-display-name">Nama Lengkap:</label>
+                            <input type="text" id="register-display-name">
+                        </div>
+                        <div class="form-group">
+                            <label for="register-password">Password:</label>
+                            <input type="password" id="register-password">
+                        </div>
+                        <div class="form-group">
+                            <label for="register-password-confirm">Konfirmasi Password:</label>
+                            <input type="password" id="register-password-confirm">
+                        </div>
+                        <button type="button" class="login-btn" id="register-btn">
+                            <i class="fas fa-user-plus"></i> Daftar
+                        </button>
+                    </div>
+                </div>
+            </form>
+            <div class="login-info">
+                <p id="login-message" class="login-message"></p>
+            </div>
+        </div>
     </div>
 
     <!-- Modal for Account Management -->
@@ -719,6 +888,59 @@
                     </button>
                     <button type="submit" class="btn-primary" id="save-edit-queue-btn">
                         <i class="fas fa-save"></i> Simpan Perubahan
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for User Management -->
+    <div class="modal" id="user-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="user-modal-title">Tambah User Baru</h3>
+                <button class="modal-close" id="user-modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="modal-form" id="user-form">
+                <input type="hidden" id="user-id">
+
+                <div class="form-group">
+                    <label for="user-username">Username:</label>
+                    <input type="text" id="user-username" required placeholder="Masukkan username...">
+                </div>
+
+                <div class="form-group">
+                    <label for="user-display-name">Nama Lengkap:</label>
+                    <input type="text" id="user-display-name" required placeholder="Masukkan nama lengkap...">
+                </div>
+
+                <div class="form-group">
+                    <label for="user-password">Password:</label>
+                    <input type="password" id="user-password" required placeholder="Masukkan password...">
+                    <small class="form-help">Minimal 6 karakter</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="user-confirm-password">Konfirmasi Password:</label>
+                    <input type="password" id="user-confirm-password" required placeholder="Konfirmasi password...">
+                </div>
+
+                <div class="form-group">
+                    <label for="user-role">Role:</label>
+                    <select id="user-role" required>
+                        <option value="user">User - Regular user</option>
+                        <option value="admin">Admin - Administrator</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-user-btn">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                    <button type="submit" class="btn-primary" id="save-user-btn">
+                        <i class="fas fa-save"></i> Simpan User
                     </button>
                 </div>
             </form>

@@ -11,7 +11,9 @@ let appState = {
         showBrowser: false
     },
     logs: [],
-    geminiApis: []
+    geminiApis: [],
+    user: null,
+    isAuthenticated: false
 };
 
 // API Base URL
@@ -20,6 +22,9 @@ const API_BASE = window.location.origin;
 // DOM Elements
 let elements = {};
 
+// Current user info
+let currentUser = null;
+
 // Analytics state
 let analyticsState = {
     currentTimeRange: '30d',
@@ -27,14 +32,82 @@ let analyticsState = {
     isLoading: false
 };
 
+// Admin state
+let adminState = {
+    users: [],
+    isLoading: false,
+    currentEditingUser: null
+};
+
 // Initialize application when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     initializeElements();
     setupEventListeners();
-    await loadAppData();
-    setupNavigation();
-    updateStatusBar();
+
+    // Check authentication status first
+    await checkAuthStatus();
+
+    // Load app data only if authenticated
+    if (appState.isAuthenticated) {
+        await loadAppData();
+        setupNavigation();
+        updateStatusBar();
+    }
 });
+
+// Check authentication status on page load
+async function checkAuthStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/auth/check`);
+
+        if (response.ok) {
+            const result = await response.json();
+            if (result.authenticated) {
+                appState.user = result.user;
+                appState.isAuthenticated = true;
+                showApp();
+                updateUserInfo();
+                showToast(`Selamat datang kembali, ${result.user.displayName || result.user.username}!`, 'success');
+            } else {
+                showLogin();
+                updateUserInfo();
+            }
+        } else {
+            // If auth check fails, assume not authenticated
+            showLogin();
+            updateUserInfo();
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        showLogin();
+    }
+}
+
+// Show login form and hide app
+function showLogin() {
+    const loginOverlay = document.getElementById('login-overlay');
+    const appContainer = document.getElementById('app-container');
+
+    if (loginOverlay) {
+        loginOverlay.style.display = 'flex';
+    }
+    if (appContainer) {
+        appContainer.style.display = 'none';
+    }
+}
+
+// Show app and hide login form
+function showApp() {
+    const loginOverlay = document.getElementById('login-overlay');
+    const appContainer = document.getElementById('app-container');
+
+    if (loginOverlay) {
+        loginOverlay.style.display = 'none';
+    }
+    if (appContainer) {
+        appContainer.style.display = 'block';
+    }
+}
 
 // Initialize DOM elements
 function initializeElements() {
@@ -55,6 +128,10 @@ function initializeElements() {
         saveAccountBtn: document.getElementById('save-account-btn'),
         cancelAccountBtn: document.getElementById('cancel-account-btn'),
         modalClose: document.getElementById('modal-close'),
+
+        // Admin Accounts
+        adminAccountsList: document.getElementById('admin-accounts-list'),
+        totalAccounts: document.getElementById('total-accounts'),
 
         // Upload Form
         uploadForm: document.getElementById('upload-form'),
@@ -99,12 +176,40 @@ function initializeElements() {
         clearLogsBtn: document.getElementById('clear-logs-btn'),
         exportLogsBtn: document.getElementById('export-logs-btn'),
 
-        // Debug Tab Elements
-        refreshScreenshotsBtn: document.getElementById('refresh-screenshots-btn'),
-        clearTerminalLogsBtn: document.getElementById('clear-terminal-logs-btn'),
-        terminalMonitor: document.getElementById('terminal-monitor'),
-        terminalOutput: document.getElementById('terminal-output'),
-        screenshotsGallery: document.getElementById('screenshots-gallery'),
+    // Debug Tab Elements
+    refreshScreenshotsBtn: document.getElementById('refresh-screenshots-btn'),
+    clearTerminalLogsBtn: document.getElementById('clear-terminal-logs-btn'),
+    terminalMonitor: document.getElementById('terminal-monitor'),
+    terminalOutput: document.getElementById('terminal-output'),
+    screenshotsGallery: document.getElementById('screenshots-gallery'),
+
+    // Login Elements
+    loginOverlay: document.getElementById('login-overlay'),
+    loginForm: document.getElementById('login-form'),
+    registerBtn: document.getElementById('register-btn'),
+    loginBtn: document.getElementById('login-btn'),
+    loginTabBtn: document.querySelector('.tab[data-tab="login"]'),
+    registerTabBtn: document.querySelector('.tab[data-tab="register"]'),
+    loginTab: document.getElementById('login-tab'),
+    registerTab: document.getElementById('register-tab'),
+    loginUsername: document.getElementById('login-username'),
+    loginPassword: document.getElementById('login-password'),
+    registerUsername: document.getElementById('register-username'),
+    registerPassword: document.getElementById('register-password'),
+    registerPasswordConfirm: document.getElementById('register-password-confirm'),
+    registerDisplayName: document.getElementById('register-display-name'),
+    loginMessage: document.getElementById('login-message'),
+
+    // Header/User Info Elements
+    logoutBtn: document.getElementById('logout-btn'),
+    userInfo: document.getElementById('user-info'),
+    userDisplayName: document.getElementById('user-display-name'),
+
+    // Change Password Elements
+    changePasswordForm: document.getElementById('change-password-form'),
+    currentPassword: document.getElementById('current-password'),
+    newPassword: document.getElementById('new-password'),
+    confirmNewPassword: document.getElementById('confirm-new-password'),
 
         // Status
         statusText: document.getElementById('status-text'),
@@ -130,24 +235,50 @@ function initializeElements() {
         geminiSuccessRate: document.getElementById('gemini-success-rate'),
         usageStats: document.getElementById('usage-stats'),
 
-        // Edit Queue Modal
-        editQueueModal: document.getElementById('edit-queue-modal'),
-        editQueueModalClose: document.getElementById('edit-queue-modal-close'),
-        editQueueModalTitle: document.getElementById('edit-queue-modal-title'),
-        editQueueForm: document.getElementById('edit-queue-form'),
-        editQueueId: document.getElementById('edit-queue-id'),
-        editAccountSelect: document.getElementById('edit-account-select'),
-        editPageSelect: document.getElementById('edit-page-select'),
-        editUploadType: document.querySelectorAll('input[name="edit-upload-type"]'),
-        editCaption: document.getElementById('edit-caption'),
-        editCaptionLanguage: document.getElementById('edit-caption-language'),
-        editGenerateCaptionBtn: document.getElementById('edit-generate-caption-btn'),
-        editScheduleTime: document.getElementById('edit-schedule-time'),
-        editQueueStatus: document.getElementById('edit-queue-status'),
-        editRetryCount: document.getElementById('edit-retry-count'),
-        retryCountGroup: document.getElementById('retry-count-group'),
-        cancelEditQueueBtn: document.getElementById('cancel-edit-queue-btn'),
-        saveEditQueueBtn: document.getElementById('save-edit-queue-btn')
+    // Edit Queue Modal
+    editQueueModal: document.getElementById('edit-queue-modal'),
+    editQueueModalClose: document.getElementById('edit-queue-modal-close'),
+    editQueueModalTitle: document.getElementById('edit-queue-modal-title'),
+    editQueueForm: document.getElementById('edit-queue-form'),
+    editQueueId: document.getElementById('edit-queue-id'),
+    editAccountSelect: document.getElementById('edit-account-select'),
+    editPageSelect: document.getElementById('edit-page-select'),
+    editUploadType: document.querySelectorAll('input[name="edit-upload-type"]'),
+    editCaption: document.getElementById('edit-caption'),
+    editCaptionLanguage: document.getElementById('edit-caption-language'),
+    editGenerateCaptionBtn: document.getElementById('edit-generate-caption-btn'),
+    editScheduleTime: document.getElementById('edit-schedule-time'),
+    editQueueStatus: document.getElementById('edit-queue-status'),
+    editRetryCount: document.getElementById('edit-retry-count'),
+    retryCountGroup: document.getElementById('retry-count-group'),
+    cancelEditQueueBtn: document.getElementById('cancel-edit-queue-btn'),
+    saveEditQueueBtn: document.getElementById('save-edit-queue-btn'),
+
+    // Admin Elements
+    adminTab: document.getElementById('admin-tab'),
+    addUserBtn: document.getElementById('add-user-btn'),
+    userTable: document.getElementById('user-table'),
+    userTableBody: document.getElementById('user-table-body'),
+    userEmptyState: document.getElementById('user-empty-state'),
+    totalUsers: document.getElementById('total-users'),
+    activeUsers: document.getElementById('active-users'),
+    totalQueues: document.getElementById('total-queues'),
+    adminShowBrowser: document.getElementById('admin-show-browser'),
+    saveAdminSettingsBtn: document.getElementById('save-admin-settings-btn'),
+
+    // User Modal Elements
+    userModal: document.getElementById('user-modal'),
+    userModalClose: document.getElementById('user-modal-close'),
+    userModalTitle: document.getElementById('user-modal-title'),
+    userForm: document.getElementById('user-form'),
+    userId: document.getElementById('user-id'),
+    userUsername: document.getElementById('user-username'),
+    userDisplayName: document.getElementById('user-display-name'),
+    userPassword: document.getElementById('user-password'),
+    userConfirmPassword: document.getElementById('user-confirm-password'),
+    userRole: document.getElementById('user-role'),
+    cancelUserBtn: document.getElementById('cancel-user-btn'),
+    saveUserBtn: document.getElementById('save-user-btn')
     };
 }
 
@@ -221,7 +352,51 @@ function setupEventListeners() {
         if (elements.terminalMonitor) {
             setupTerminalTabSwitching();
         }
+
+        // Login/Registration Forms
+        if (elements.loginForm) {
+            elements.loginForm.addEventListener('submit', handleLoginSubmit);
+        }
+        if (elements.loginTabBtn) {
+            elements.loginTabBtn.addEventListener('click', () => switchLoginTab('login'));
+        }
+        if (elements.registerTabBtn) {
+            elements.registerTabBtn.addEventListener('click', () => switchLoginTab('register'));
+        }
+        if (elements.registerBtn) {
+            elements.registerBtn.addEventListener('click', handleRegister);
+        }
+
+        // Logout and User Info
+        if (elements.logoutBtn) {
+            elements.logoutBtn.addEventListener('click', handleLogout);
+        }
+
+        // Change Password Form
+    if (elements.changePasswordForm) {
+        elements.changePasswordForm.addEventListener('submit', handleChangePassword);
     }
+
+        // Admin Elements Event Listeners
+    if (elements.addUserBtn) {
+        elements.addUserBtn.addEventListener('click', () => openUserModal());
+    }
+    if (elements.saveUserBtn) {
+        elements.saveUserBtn.addEventListener('click', handleSaveUser);
+    }
+    if (elements.cancelUserBtn) {
+        elements.cancelUserBtn.addEventListener('click', closeUserModal);
+    }
+    if (elements.userModalClose) {
+        elements.userModalClose.addEventListener('click', closeUserModal);
+    }
+    if (elements.userForm) {
+        elements.userForm.addEventListener('submit', handleSaveUser);
+    }
+    if (elements.saveAdminSettingsBtn) {
+        elements.saveAdminSettingsBtn.addEventListener('click', handleSaveAdminSettings);
+    }
+}
 
 // Setup navigation
 function setupNavigation() {
@@ -289,6 +464,26 @@ function switchTab(tabName) {
         }
     });
 
+    // Show/hide admin-only tabs based on user role
+    const isAdmin = appState.user?.role === 'admin' || appState.user?.username === 'admin';
+
+    // Control admin-only tab visibility
+    if (elements.adminTab) {
+        elements.adminTab.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
+
+    // Control logs tab visibility (admin-only)
+    const logsTab = Array.from(elements.navTabs).find(tab => tab.dataset?.tab === 'logs');
+    if (logsTab) {
+        logsTab.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
+
+    // Control debug tab visibility (admin-only)
+    const debugTab = Array.from(elements.navTabs).find(tab => tab.dataset?.tab === 'debug');
+    if (debugTab) {
+        debugTab.style.display = isAdmin ? 'inline-flex' : 'none';
+    }
+
     // Update specific tab content
     updateTabContent(tabName);
 }
@@ -310,6 +505,9 @@ function updateTabContent(tabName) {
             break;
         case 'gemini':
             updateGeminiDisplay();
+            break;
+        case 'admin':
+            loadAdminData();
             break;
         case 'logs':
             updateLogsDisplay();
@@ -1363,11 +1561,21 @@ async function processQueue() {
 
 // Settings Functions
 function updateSettingsDisplay() {
-    elements.uploadDelay.value = appState.settings.uploadDelay / 1000; // Convert to seconds
-    elements.maxRetries.value = appState.settings.maxRetries;
-    elements.autoStartQueue.checked = appState.settings.autoStartQueue;
-    elements.showNotifications.checked = appState.settings.showNotifications;
-    elements.showBrowser.checked = appState.settings.showBrowser;
+    if (elements.uploadDelay) {
+        elements.uploadDelay.value = appState.settings.uploadDelay / 1000; // Convert to seconds
+    }
+    if (elements.maxRetries) {
+        elements.maxRetries.value = appState.settings.maxRetries;
+    }
+    if (elements.autoStartQueue) {
+        elements.autoStartQueue.checked = appState.settings.autoStartQueue;
+    }
+    if (elements.showNotifications) {
+        elements.showNotifications.checked = appState.settings.showNotifications;
+    }
+    if (elements.showBrowser) {
+        elements.showBrowser.checked = appState.settings.showBrowser;
+    }
 }
 
 async function saveSettings(e) {
@@ -2414,12 +2622,21 @@ elements.editQueueModal?.addEventListener('click', (e) => {
     }
 });
 
-// Handle escape key for edit queue modal
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && elements.editQueueModal.classList.contains('show')) {
-        closeEditQueueModal();
-    }
-});
+        // Handle escape key for modals
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && elements.accountModal.classList.contains('show')) {
+                closeAccountModal();
+            }
+            if (e.key === 'Escape' && elements.geminiModal.classList.contains('show')) {
+                closeGeminiModal();
+            }
+            if (e.key === 'Escape' && elements.editQueueModal.classList.contains('show')) {
+                closeEditQueueModal();
+            }
+            if (e.key === 'Escape' && elements.userModal.classList.contains('show')) {
+                closeUserModal();
+            }
+        });
 
 function categorizeContent(formData) {
     const text = `${formData.caption || ''} ${formData.hashtags?.join(' ') || ''}`.toLowerCase();
@@ -2639,6 +2856,270 @@ window.openScreenshotModal = function(filename, step) {
     document.body.appendChild(modal);
 };
 
+// Login and Registration Functions
+async function switchLoginTab(tabName) {
+    // Update tab buttons
+    elements.loginTabBtn.classList.toggle('active', tabName === 'login');
+    elements.registerTabBtn.classList.toggle('active', tabName === 'register');
+
+    // Show/hide forms
+    if (elements.loginTab) {
+        elements.loginTab.style.display = tabName === 'login' ? 'block' : 'none';
+    }
+    if (elements.registerTab) {
+        elements.registerTab.style.display = tabName === 'register' ? 'block' : 'none';
+    }
+
+    // Hide any messages
+    if (elements.loginMessage) {
+        elements.loginMessage.classList.remove('show-message');
+    }
+
+    // Clear forms
+    if (tabName === 'login' && elements.loginForm) {
+        elements.loginForm.reset();
+    } else if (tabName === 'register') {
+        // Note: Register form elements might be added later in HTML
+        if (elements.registerUsername) elements.registerUsername.value = '';
+        if (elements.registerPassword) elements.registerPassword.value = '';
+        if (elements.registerPasswordConfirm) elements.registerPasswordConfirm.value = '';
+        if (elements.registerDisplayName) elements.registerDisplayName.value = '';
+    }
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+
+    const username = elements.loginUsername?.value?.trim();
+    const password = elements.loginPassword?.value;
+
+    if (!username || !password) {
+        showLoginMessage('Mohon lengkapi semua field', 'warning');
+        return;
+    }
+
+    try {
+        elements.loginBtn.disabled = true;
+        elements.loginBtn.innerHTML = '<div class="loading"></div> Masuk...';
+
+        const response = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            appState.user = result.user;
+            appState.isAuthenticated = true;
+            showApp();
+            updateUserInfo();
+            await loadAppData();
+            setupNavigation();
+            updateStatusBar();
+            showToast(`Selamat datang kembali, ${result.user.displayName || result.user.username}!`, 'success');
+        } else {
+            showLoginMessage(result.error || 'Login gagal', 'error');
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showLoginMessage('Terjadi kesalahan saat login', 'error');
+    } finally {
+        elements.loginBtn.disabled = false;
+        elements.loginBtn.innerHTML = 'Masuk';
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+
+    const username = elements.registerUsername?.value?.trim();
+    const password = elements.registerPassword?.value;
+    const passwordConfirm = elements.registerPasswordConfirm?.value;
+    const displayName = elements.registerDisplayName?.value?.trim();
+
+    if (!username || !password || !displayName) {
+        showLoginMessage('Mohon lengkapi semua field', 'warning');
+        return;
+    }
+
+    if (password !== passwordConfirm) {
+        showLoginMessage('Password tidak cocok', 'error');
+        return;
+    }
+
+    if (password.length < 6) {
+        showLoginMessage('Password minimal 6 karakter', 'warning');
+        return;
+    }
+
+    try {
+        elements.registerBtn.disabled = true;
+        elements.registerBtn.innerHTML = '<div class="loading"></div> Daftar...';
+
+        const response = await fetch(`${API_BASE}/auth/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password, displayName })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            appState.user = result.user;
+            appState.isAuthenticated = true;
+            showApp();
+            await loadAppData();
+            setupNavigation();
+            updateStatusBar();
+            showToast(`Selamat datang, ${result.user.displayName}! Akun berhasil dibuat.`, 'success');
+        } else {
+            showLoginMessage(result.error || 'Registrasi gagal', 'error');
+        }
+    } catch (error) {
+        console.error('Register error:', error);
+        showLoginMessage('Terjadi kesalahan saat registrasi', 'error');
+    } finally {
+        elements.registerBtn.disabled = false;
+        elements.registerBtn.innerHTML = 'Daftar';
+    }
+}
+
+function showLoginMessage(message, type = 'error') {
+    if (!elements.loginMessage) return;
+
+    elements.loginMessage.textContent = message;
+    elements.loginMessage.className = `login-message ${type} show-message`;
+}
+
+// Update user info display in header
+function updateUserInfo() {
+    if (appState.user) {
+        if (elements.userDisplayName) {
+            elements.userDisplayName.textContent = appState.user.displayName || appState.user.username || 'User';
+        }
+        if (elements.userInfo) {
+            elements.userInfo.style.display = 'flex';
+        }
+        if (elements.logoutBtn) {
+            elements.logoutBtn.style.display = 'block';
+        }
+    } else {
+        if (elements.userDisplayName) {
+            elements.userDisplayName.textContent = '';
+        }
+        if (elements.userInfo) {
+            elements.userInfo.style.display = 'none';
+        }
+        if (elements.logoutBtn) {
+            elements.logoutBtn.style.display = 'none';
+        }
+    }
+}
+
+// Logout function (can be called from UI)
+async function handleLogout(e) {
+    if (e) e.preventDefault();
+
+    const confirmLogout = confirm('Apakah Anda yakin ingin logout?');
+    if (!confirmLogout) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/auth/logout`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            appState.user = null;
+            appState.isAuthenticated = false;
+            appState.accounts = [];
+            appState.uploadQueue = [];
+
+            showLogin();
+            showToast('Anda telah berhasil logout', 'info');
+        } else {
+            // Still logout from client side even if server fails
+            appState.user = null;
+            appState.isAuthenticated = false;
+            showLogin();
+            showToast('Logout berhasil (client-side)', 'info');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Force logout on client side even if server fails
+        appState.user = null;
+        appState.isAuthenticated = false;
+        showLogin();
+        showToast('Logout berhasil (client-side)', 'info');
+    }
+}
+
+// Change password function
+async function handleChangePassword(e) {
+    e.preventDefault();
+
+    const currentPassword = elements.currentPassword?.value?.trim();
+    const newPassword = elements.newPassword?.value?.trim();
+    const confirmNewPassword = elements.confirmNewPassword?.value?.trim();
+
+    if (!currentPassword) {
+        showToast('Password saat ini harus diisi', 'error');
+        return;
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+        showToast('Password baru minimal 6 karakter', 'error');
+        return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+        showToast('Konfirmasi password baru tidak cocok', 'error');
+        return;
+    }
+
+    if (currentPassword === newPassword) {
+        showToast('Password baru harus berbeda dengan password saat ini', 'warning');
+        return;
+    }
+
+    try {
+        elements.changePasswordForm.querySelector('button[type="submit"]').disabled = true;
+        elements.changePasswordForm.querySelector('button[type="submit"]').innerHTML = '<div class="loading"></div> Mengubah...';
+
+        const response = await fetch(`${API_BASE}/auth/change-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                currentPassword,
+                newPassword
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            elements.changePasswordForm.reset();
+            showToast('Password berhasil diubah', 'success');
+        } else {
+            showToast(result.error || 'Gagal mengubah password', 'error');
+        }
+    } catch (error) {
+        console.error('Change password error:', error);
+        showToast('Terjadi kesalahan saat mengubah password', 'error');
+    } finally {
+        elements.changePasswordForm.querySelector('button[type="submit"]').disabled = false;
+        elements.changePasswordForm.querySelector('button[type="submit"]').innerHTML = '<i class="fas fa-save"></i> Ubah Password';
+    }
+}
+
 window.downloadScreenshot = async function(filename) {
     try {
         const response = await fetch(`${API_BASE}/api/debug/screenshots/${filename}`);
@@ -2654,5 +3135,394 @@ window.downloadScreenshot = async function(filename) {
         showToast('Screenshot berhasil didownload', 'success');
     } catch (error) {
         showToast(`Gagal download screenshot: ${error.message}`, 'error');
+    }
+};
+
+// Admin Functions
+async function loadAdminData() {
+    try {
+        adminState.isLoading = true;
+
+        // Load users data
+        const usersResponse = await fetch(`${API_BASE}/api/admin/users`);
+        const usersResult = await usersResponse.json();
+
+        if (usersResult.success) {
+            adminState.users = usersResult.users || [];
+            updateUsersDisplay();
+
+            // Update stats
+            elements.totalUsers.textContent = adminState.users.length;
+            elements.activeUsers.textContent = adminState.users.filter(u => u.lastLogin && Date.now() - new Date(u.lastLogin) < 24 * 60 * 60 * 1000).length; // Active in last 24h
+            elements.totalQueues.textContent = appState.uploadQueue.length;
+
+            showToast('Admin data berhasil dimuat', 'success');
+        } else {
+            showToast(`Gagal memuat data admin: ${usersResult.error}`, 'error');
+            updateUsersDisplay(); // Show empty
+        }
+    } catch (error) {
+        console.error('Admin data load error:', error);
+        showToast(`Error memuat data admin: ${error.message}`, 'error');
+        updateUsersDisplay(); // Show empty
+    } finally {
+        adminState.isLoading = false;
+    }
+}
+
+function updateUsersDisplay() {
+    if (!elements.userTableBody) return;
+
+    if (adminState.users.length === 0) {
+        if (elements.userEmptyState) elements.userEmptyState.style.display = 'block';
+        return;
+    }
+
+    if (elements.userEmptyState) elements.userEmptyState.style.display = 'none';
+
+    elements.userTableBody.innerHTML = adminState.users.map(user => `
+        <tr>
+            <td>${user.username}</td>
+            <td>${user.displayName}</td>
+            <td>
+                <span class="role-badge ${user.role}">${user.role}</span>
+            </td>
+            <td>${new Date(user.createdAt).toLocaleDateString()}</td>
+            <td>${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Belum pernah login'}</td>
+            <td class="user-actions">
+                <button class="btn-secondary btn-small" onclick="editUser('${user.id}')">
+                    <i class="fas fa-edit"></i> Edit
+                </button>
+                <button class="btn-danger btn-small" onclick="deleteUser('${user.id}', '${user.username}')">
+                    <i class="fas fa-trash"></i> Hapus
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openUserModal(user = null) {
+    adminState.currentEditingUser = user;
+
+    if (user) {
+        // Edit mode
+        elements.userModalTitle.textContent = 'Edit User';
+        elements.userId.value = user.id;
+        elements.userUsername.value = user.username;
+        elements.userDisplayName.value = user.displayName;
+        elements.userRole.value = user.role || 'user';
+        elements.userPassword.value = ''; // Don't show password
+        elements.userConfirmPassword.value = '';
+        elements.saveUserBtn.innerHTML = '<i class="fas fa-save"></i> Update User';
+
+        // Make username readonly for edit
+        elements.userUsername.readOnly = true;
+        elements.userUsername.style.opacity = '0.7';
+
+        // Hide password fields for edit
+        elements.userPassword.closest('.form-group').style.display = 'none';
+        elements.userConfirmPassword.closest('.form-group').style.display = 'none';
+    } else {
+        // Add mode
+        elements.userModalTitle.textContent = 'Tambah User Baru';
+        elements.userForm.reset();
+        elements.userId.value = '';
+        elements.saveUserBtn.innerHTML = '<i class="fas fa-save"></i> Simpan User';
+
+        // Make username editable
+        elements.userUsername.readOnly = false;
+        elements.userUsername.style.opacity = '1';
+
+        // Show password fields
+        elements.userPassword.closest('.form-group').style.display = 'block';
+        elements.userConfirmPassword.closest('.form-group').style.display = 'block';
+    }
+
+    elements.userModal.classList.add('show');
+}
+
+function closeUserModal() {
+    elements.userModal.classList.remove('show');
+    elements.userForm.reset();
+    adminState.currentEditingUser = null;
+}
+
+async function handleSaveUser(e) {
+    e.preventDefault();
+
+    const userId = elements.userId.value.trim();
+    const username = elements.userUsername.value.trim();
+    const displayName = elements.userDisplayName.value.trim();
+    const password = elements.userPassword.value.trim();
+    const confirmPassword = elements.userConfirmPassword.value.trim();
+    const role = elements.userRole.value;
+
+    // Basic validation
+    if (!username || !displayName || !role) {
+        showToast('Username, display name, dan role harus diisi', 'error');
+        return;
+    }
+
+    let isEdit = !!userId;
+
+    if (!isEdit && (!password || !confirmPassword)) {
+        showToast('Password dan konfirmasi password harus diisi', 'error');
+        return;
+    }
+
+    if (!isEdit && password !== confirmPassword) {
+        showToast('Password dan konfirmasi password tidak cocok', 'error');
+        return;
+    }
+
+    if (!isEdit && password.length < 6) {
+        showToast('Password minimal 6 karakter', 'error');
+        return;
+    }
+
+    const userData = {
+        username,
+        displayName,
+        role
+    };
+
+    if (!isEdit) {
+        userData.password = password;
+    }
+
+    try {
+        elements.saveUserBtn.disabled = true;
+        elements.saveUserBtn.innerHTML = '<div class="loading"></div> Menyimpan...';
+
+        const method = isEdit ? 'PUT' : 'POST';
+        const url = isEdit ? `${API_BASE}/api/admin/users/${userId}` : `${API_BASE}/api/admin/users`;
+
+        const response = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            closeUserModal();
+            await loadAdminData(); // Refresh the users list
+
+            const message = isEdit ?
+                'User berhasil diupdate!' :
+                `User "${username}" berhasil dibuat dengan role "${role}"!`;
+
+            showToast(message, 'success');
+
+            // If new admin user created, refresh navigation to show admin tab if applicable
+            if (role === 'admin') {
+                setupNavigation();
+            }
+        } else {
+            showToast(`Gagal menyimpan user: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Save user error:', error);
+        showToast(`Error menyimpan user: ${error.message}`, 'error');
+    } finally {
+        elements.saveUserBtn.disabled = false;
+        elements.saveUserBtn.innerHTML = '<i class="fas fa-save"></i> Simpan User';
+    }
+}
+
+// Make admin functions globally available
+window.editUser = async function(userId) {
+    const user = adminState.users.find(u => u.id === userId);
+    if (user) {
+        openUserModal(user);
+    } else {
+        showToast('User tidak ditemukan', 'error');
+    }
+};
+
+window.deleteUser = async function(userId, username) {
+    if (!confirm(`Apakah Anda yakin ingin menghapus user "${username}"?\n\nTindakan ini tidak dapat dibatalkan!`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            await loadAdminData(); // Refresh users list
+            showToast(`User "${username}" berhasil dihapus`, 'success');
+        } else {
+            showToast(`Gagal menghapus user: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Delete user error:', error);
+        showToast(`Error menghapus user: ${error.message}`, 'error');
+    }
+};
+
+// Handle modal click outside for user modal
+elements.userModal?.addEventListener('click', (e) => {
+    if (e.target === elements.userModal) {
+        closeUserModal();
+    }
+});
+
+async function handleSaveAdminSettings(e) {
+    e.preventDefault();
+
+    const newSettings = {
+        showBrowser: elements.adminShowBrowser.checked
+    };
+
+    try {
+        elements.saveAdminSettingsBtn.disabled = true;
+        elements.saveAdminSettingsBtn.innerHTML = '<div class="loading"></div> Menyimpan...';
+
+        const result = await fetch(`${API_BASE}/api/admin/settings`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(newSettings)
+        });
+        const response = await result.json();
+
+        if (response.success) {
+            showToast('Pengaturan sistem berhasil disimpan', 'success');
+        } else {
+            showToast(`Gagal menyimpan pengaturan: ${response.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error: ${error.message}`, 'error');
+    } finally {
+        elements.saveAdminSettingsBtn.disabled = false;
+        elements.saveAdminSettingsBtn.innerHTML = '<i class="fas fa-save"></i> Simpan Pengaturan Sistem';
+    }
+}
+
+// Check current user role on page load to show admin tab
+document.addEventListener('DOMContentLoaded', async () => {
+    // Wait for initial auth check to complete
+    setTimeout(() => {
+        if (appState.user?.role === 'admin' || appState.user?.username === 'admin') {
+            if (elements.adminTab) elements.adminTab.style.display = 'block';
+        }
+    }, 1000);
+});
+
+// Admin accounts management functions
+function updateAdminAccountsDisplay(accounts) {
+    if (!elements.adminAccountsList || !accounts) return;
+
+    if (accounts.length === 0) {
+        elements.adminAccountsList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-users"></i>
+                <h3>Belum ada akun</h3>
+                <p>Semua akun Facebook dari semua user akan muncul di sini.</p>
+            </div>
+        `;
+        return;
+    }
+
+    elements.adminAccountsList.innerHTML = accounts.map(account => {
+        const ownerInfo = account.ownerUsername === account.ownerDisplayName
+            ? account.ownerUsername
+            : `${account.ownerDisplayName} (${account.ownerUsername})`;
+        const pagesCount = account.pagesCount || account.pages?.length || 0;
+
+        return `
+            <div class="admin-account-card">
+                <div class="account-info">
+                    <h4>${account.name}</h4>
+                    <p><i class="fas fa-user"></i> ${ownerInfo}</p>
+                    <p><i class="fas fa-globe"></i> Halaman: ${pagesCount} | ${account.type}</p>
+                    <p><i class="fas fa-circle ${account.valid ? 'text-success' : 'text-danger'}"></i> ${account.valid ? 'Valid' : 'Tidak Valid'}</p>
+                    <small>Dibuat: ${new Date(account.created_at).toLocaleDateString()}</small>
+                </div>
+                <div class="account-actions">
+                    <button class="btn-secondary btn-small" onclick="viewAdminAccountDetails('${account.id}')">
+                        <i class="fas fa-eye"></i> Detail
+                    </button>
+                    <button class="btn-danger btn-small" onclick="deleteAdminAccount('${account.id}', '${account.name}')">
+                        <i class="fas fa-trash"></i> Hapus
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Make admin account functions globally available
+window.viewAdminAccountDetails = async function(accountId) {
+    showToast('Fitur detail akun admin akan diimplementasikan', 'info');
+};
+
+window.deleteAdminAccount = async function(accountId, accountName) {
+    if (!confirm(`Apakah Anda yakin ingin menghapus akun "${accountName}"?\n\nTindakan ini akan menghapus akun dari user tersebut!`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/accounts/${accountId}`, {
+            method: 'DELETE'
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            await loadAdminData(); // Refresh the admin data including accounts
+            showToast(`Akun "${accountName}" berhasil dihapus`, 'success');
+        } else {
+            showToast(`Gagal menghapus akun: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Delete admin account error:', error);
+        showToast(`Error menghapus akun: ${error.message}`, 'error');
+    }
+};
+
+// Update loadAdminData to load admin settings and admin accounts
+const originalLoadAdminData = loadAdminData;
+loadAdminData = async function() {
+    // Call the original function first to load users
+    await originalLoadAdminData();
+
+    try {
+        // Load admin settings
+        const settingsResponse = await fetch(`${API_BASE}/api/admin/settings`);
+        const settingsResult = await settingsResponse.json();
+
+        if (settingsResult.success) {
+            const adminSettings = settingsResult.settings || {};
+            // Update the admin form with current settings
+            if (elements.adminShowBrowser) {
+                elements.adminShowBrowser.checked = adminSettings.showBrowser || false;
+            }
+        }
+
+        // Load admin accounts data (accounts from all users)
+        const accountsResponse = await fetch(`${API_BASE}/api/admin/accounts`);
+        const accountsResult = await accountsResponse.json();
+
+        if (accountsResult.success) {
+            updateAdminAccountsDisplay(accountsResult.accounts || []);
+            elements.totalAccounts.textContent = (accountsResult.accounts || []).length;
+        } else {
+            elements.totalAccounts.textContent = '0';
+            updateAdminAccountsDisplay([]);
+        }
+
+    } catch (error) {
+        console.error('Error loading admin settings and accounts:', error);
+        // Update with empty data on error
+        elements.totalAccounts.textContent = '0';
+        updateAdminAccountsDisplay([]);
     }
 };

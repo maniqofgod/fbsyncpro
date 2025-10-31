@@ -1,11 +1,8 @@
-const Store = require('electron-store');
-const fs = require('fs').promises;
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
-// Inisialisasi electron-store
-const store = new Store();
-
-const DB_PATH = path.join(__dirname, '..', '..', 'db.json');
+// Database path
+const DB_PATH = path.join(__dirname, '..', '..', 'reelsync.db');
 
 /**
  * Analytics Manager Module
@@ -13,106 +10,191 @@ const DB_PATH = path.join(__dirname, '..', '..', 'db.json');
  */
 class AnalyticsManager {
     constructor() {
-        this.store = store;
-        this.dbPath = DB_PATH;
+        this.db = null;
+        this.initDatabase();
+    }
+
+    async initDatabase() {
+        return new Promise((resolve, reject) => {
+            this.db = new sqlite3.Database(DB_PATH, (err) => {
+                if (err) {
+                    console.error('Error opening AnalyticsManager database:', err.message);
+                    reject(err);
+                    return;
+                }
+
+                // Create analytics tables if they don't exist
+                const createTables = `
+                    CREATE TABLE IF NOT EXISTS analytics_uploads (
+                        id TEXT PRIMARY KEY,
+                        account_name TEXT,
+                        page_id TEXT,
+                        page_name TEXT,
+                        type TEXT,
+                        file_name TEXT,
+                        file_size INTEGER,
+                        duration REAL,
+                        caption TEXT,
+                        hashtags TEXT,
+                        status TEXT,
+                        upload_url TEXT,
+                        scheduled_time DATETIME,
+                        actual_upload_time DATETIME,
+                        completion_time DATETIME,
+                        processing_time INTEGER,
+                        retry_count INTEGER DEFAULT 0,
+                        error_message TEXT,
+                        category TEXT,
+                        priority TEXT,
+                        thumbnail_url TEXT,
+                        video_url TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        user_id TEXT,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS analytics_engagement (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        upload_id TEXT,
+                        account_name TEXT,
+                        page_id TEXT,
+                        type TEXT,
+                        views INTEGER DEFAULT 0,
+                        likes INTEGER DEFAULT 0,
+                        comments INTEGER DEFAULT 0,
+                        shares INTEGER DEFAULT 0,
+                        reactions TEXT,
+                        reach INTEGER DEFAULT 0,
+                        impressions INTEGER DEFAULT 0,
+                        engagement_rate REAL DEFAULT 0,
+                        click_through_rate REAL DEFAULT 0,
+                        watch_time INTEGER DEFAULT 0,
+                        average_watch_time INTEGER DEFAULT 0,
+                        tracked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        user_id TEXT,
+                        FOREIGN KEY (upload_id) REFERENCES analytics_uploads(id),
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    );
+                `;
+
+                this.db.exec(createTables, (err) => {
+                    if (err) {
+                        console.error('Error creating AnalyticsManager tables:', err.message);
+                        reject(err);
+                        return;
+                    }
+                    console.log('✅ AnalyticsManager database initialized');
+                    resolve();
+                });
+            });
+        });
     }
 
     /**
      * Track upload data untuk analytics
      */
-    async trackUpload(uploadData) {
-        try {
-            const data = await this.readDb();
-            const analytics = data.analytics || {};
+    async trackUpload(uploadData, userId) {
+        return new Promise((resolve, reject) => {
+            const uploadId = uploadData.id || this.generateId();
 
-            if (!analytics.uploads) analytics.uploads = [];
+            const insertQuery = `
+                INSERT OR REPLACE INTO analytics_uploads (
+                    id, account_name, page_id, page_name, type, file_name, file_size, duration,
+                    caption, hashtags, status, upload_url, scheduled_time, actual_upload_time,
+                    completion_time, processing_time, retry_count, error_message, category,
+                    priority, thumbnail_url, video_url, user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
 
-            const uploadRecord = {
-                id: uploadData.id || this.generateId(),
-                accountName: uploadData.accountName,
-                pageId: uploadData.pageId,
-                pageName: uploadData.pageName,
-                type: uploadData.type,
-                fileName: uploadData.fileName,
-                fileSize: uploadData.fileSize,
-                duration: uploadData.duration,
-                caption: uploadData.caption,
-                hashtags: uploadData.hashtags || [],
-                status: uploadData.status || 'pending',
-                uploadUrl: uploadData.uploadUrl,
-                scheduledTime: uploadData.scheduledTime,
-                actualUploadTime: uploadData.actualUploadTime,
-                completionTime: uploadData.completionTime,
-                processingTime: uploadData.processingTime,
-                retryCount: uploadData.retryCount || 0,
-                errorMessage: uploadData.errorMessage,
-                category: uploadData.category || this.categorizeContent(uploadData),
-                priority: uploadData.priority || 'medium',
-                thumbnailUrl: uploadData.thumbnailUrl,
-                videoUrl: uploadData.videoUrl,
-                createdAt: new Date().toISOString()
-            };
+            const hashtagsJson = JSON.stringify(uploadData.hashtags || []);
+            const category = uploadData.category || this.categorizeContent(uploadData);
 
-            analytics.uploads.push(uploadRecord);
-            await this.writeDb(data);
+            const params = [
+                uploadId,
+                uploadData.accountName,
+                uploadData.pageId,
+                uploadData.pageName,
+                uploadData.type,
+                uploadData.fileName,
+                uploadData.fileSize,
+                uploadData.duration,
+                uploadData.caption,
+                hashtagsJson,
+                uploadData.status || 'pending',
+                uploadData.uploadUrl,
+                uploadData.scheduledTime,
+                uploadData.actualUploadTime,
+                uploadData.completionTime,
+                uploadData.processingTime,
+                uploadData.retryCount || 0,
+                uploadData.errorMessage,
+                category,
+                uploadData.priority || 'medium',
+                uploadData.thumbnailUrl,
+                uploadData.videoUrl,
+                userId
+            ];
 
-            console.log(`📊 Upload tracked: ${uploadRecord.id} - ${uploadRecord.type}`);
-            return { success: true, uploadId: uploadRecord.id };
-        } catch (error) {
-            console.error('Error tracking upload:', error);
-            return { success: false, error: error.message };
-        }
+            this.db.run(insertQuery, params, function(err) {
+                if (err) {
+                    console.error('Error tracking upload:', err);
+                    reject({ success: false, error: err.message });
+                    return;
+                }
+
+                console.log(`📊 Upload tracked: ${uploadId} - ${uploadData.type}`);
+                resolve({ success: true, uploadId });
+            });
+        });
     }
 
     /**
      * Update engagement metrics untuk upload tertentu
      */
-    async updateEngagement(uploadId, metrics) {
-        try {
-            const data = await this.readDb();
-            const analytics = data.analytics || {};
+    async updateEngagement(uploadId, metrics, userId) {
+        return new Promise((resolve, reject) => {
+            const insertQuery = `
+                INSERT OR REPLACE INTO analytics_engagement (
+                    upload_id, account_name, page_id, type, views, likes, comments, shares,
+                    reactions, reach, impressions, engagement_rate, click_through_rate,
+                    watch_time, average_watch_time, user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
 
-            if (!analytics.engagement) analytics.engagement = [];
+            const reactionsJson = JSON.stringify(metrics.reactions || {});
+            const engagementRate = this.calculateEngagementRate(metrics);
 
-            // Cari engagement record yang sudah ada
-            const existingIndex = analytics.engagement.findIndex(e => e.uploadId === uploadId);
+            const params = [
+                uploadId,
+                metrics.accountName,
+                metrics.pageId,
+                metrics.type,
+                metrics.views || 0,
+                metrics.likes || 0,
+                metrics.comments || 0,
+                metrics.shares || 0,
+                reactionsJson,
+                metrics.reach || 0,
+                metrics.impressions || 0,
+                engagementRate,
+                metrics.clickThroughRate || 0,
+                metrics.watchTime || 0,
+                metrics.averageWatchTime || 0,
+                userId
+            ];
 
-            const engagementRecord = {
-                uploadId: uploadId,
-                accountName: metrics.accountName,
-                pageId: metrics.pageId,
-                type: metrics.type,
-                metrics: {
-                    views: metrics.views || 0,
-                    likes: metrics.likes || 0,
-                    comments: metrics.comments || 0,
-                    shares: metrics.shares || 0,
-                    reactions: metrics.reactions || {},
-                    reach: metrics.reach || 0,
-                    impressions: metrics.impressions || 0,
-                    engagementRate: this.calculateEngagementRate(metrics),
-                    clickThroughRate: metrics.clickThroughRate || 0,
-                    watchTime: metrics.watchTime || 0,
-                    averageWatchTime: metrics.averageWatchTime || 0
-                },
-                trackedAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            };
+            this.db.run(insertQuery, params, function(err) {
+                if (err) {
+                    console.error('Error updating engagement:', err);
+                    reject({ success: false, error: err.message });
+                    return;
+                }
 
-            if (existingIndex >= 0) {
-                analytics.engagement[existingIndex] = engagementRecord;
-            } else {
-                analytics.engagement.push(engagementRecord);
-            }
-
-            await this.writeDb(data);
-
-            console.log(`📈 Engagement updated: ${uploadId} - ${metrics.views || 0} views`);
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating engagement:', error);
-            return { success: false, error: error.message };
-        }
+                console.log(`📈 Engagement updated: ${uploadId} - ${metrics.views || 0} views`);
+                resolve({ success: true });
+            });
+        });
     }
 
     /**
@@ -147,11 +229,8 @@ class AnalyticsManager {
     /**
      * Get analytics dashboard data
      */
-    async getDashboardData(timeRange = '30d') {
-        try {
-            const data = await this.readDb();
-            const analytics = data.analytics || {};
-
+    async getDashboardData(timeRange = '30d', userId) {
+        return new Promise((resolve, reject) => {
             const endDate = new Date();
             const startDate = new Date();
 
@@ -169,21 +248,36 @@ class AnalyticsManager {
                     startDate.setDate(endDate.getDate() - 30);
             }
 
-            const filteredUploads = this.filterUploadsByDate(analytics.uploads || [], startDate, endDate);
-            const filteredEngagement = this.filterEngagementByDate(analytics.engagement || [], startDate, endDate);
+            const queryPromises = [
+                this.getUploadsData(startDate, endDate, userId),
+                this.getEngagementData(startDate, endDate, userId),
+                this.getTrendsDataFromDB(startDate, endDate, userId),
+                this.getAccountComparisonFromDB(startDate, endDate, userId),
+                this.getCategoryStatsFromDB(userId),
+            ];
 
-            return {
-                overview: this.getOverviewStats(filteredUploads, filteredEngagement),
-                performance: this.getPerformanceStats(filteredUploads, filteredEngagement),
-                trends: this.getTrendsData(filteredUploads, filteredEngagement, startDate, endDate),
-                accounts: this.getAccountComparison(filteredUploads, filteredEngagement),
-                categories: this.getCategoryStats(filteredUploads, filteredEngagement),
-                bestTimes: this.getBestPostingTimes(filteredUploads, filteredEngagement)
-            };
-        } catch (error) {
-            console.error('Error getting dashboard data:', error);
-            return null;
-        }
+            Promise.all(queryPromises).then(([uploads, engagement, trendsData, accounts, categories]) => {
+                try {
+                    const overview = this.getOverviewStats(uploads, engagement);
+                    const performance = this.getPerformanceStats(uploads, engagement);
+
+                    resolve({
+                        overview,
+                        performance,
+                        trends: trendsData,
+                        accounts,
+                        categories,
+                        bestTimes: this.getBestPostingTimes(uploads, engagement)
+                    });
+                } catch (error) {
+                    console.error('Error processing dashboard data:', error);
+                    resolve(null);
+                }
+            }).catch(error => {
+                console.error('Error in dashboard data queries:', error);
+                resolve(null);
+            });
+        });
     }
 
     /**
@@ -588,29 +682,261 @@ class AnalyticsManager {
         };
     }
 
-    /**
-     * Read database file
-     */
-    async readDb() {
-        try {
-            const data = await fs.readFile(this.dbPath, 'utf8');
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('Error reading database:', error);
-            return {};
-        }
+    // Helper methods for database queries
+    async getUploadsData(startDate, endDate, userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT * FROM analytics_uploads
+                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                ORDER BY actual_upload_time DESC
+            `;
+
+            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+                if (err) {
+                    console.error('Error getting uploads data:', err);
+                    resolve([]);
+                    return;
+                }
+
+                const uploads = rows.map(row => ({
+                    id: row.id,
+                    accountName: row.account_name,
+                    pageId: row.page_id,
+                    pageName: row.page_name,
+                    type: row.type,
+                    fileName: row.file_name,
+                    status: row.status,
+                    actualUploadTime: row.actual_upload_time,
+                    completionTime: row.completion_time,
+                    processingTime: row.processing_time,
+                    retryCount: row.retry_count,
+                    errorMessage: row.error_message,
+                    category: row.category,
+                }));
+
+                resolve(uploads);
+            });
+        });
     }
 
-    /**
-     * Write database file
-     */
-    async writeDb(data) {
-        try {
-            await fs.writeFile(this.dbPath, JSON.stringify(data, null, 2));
-        } catch (error) {
-            console.error('Error writing database:', error);
-            throw error;
-        }
+    async getEngagementData(startDate, endDate, userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT * FROM analytics_engagement
+                WHERE user_id = ? AND tracked_at BETWEEN ? AND ?
+                ORDER BY tracked_at DESC
+            `;
+
+            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+                if (err) {
+                    console.error('Error getting engagement data:', err);
+                    resolve([]);
+                    return;
+                }
+
+                const engagement = rows.map(row => ({
+                    uploadId: row.upload_id,
+                    accountName: row.account_name,
+                    pageId: row.page_id,
+                    type: row.type,
+                    metrics: {
+                        views: row.views,
+                        likes: row.likes,
+                        comments: row.comments,
+                        shares: row.shares,
+                        engagementRate: row.engagement_rate,
+                        reach: row.reach,
+                        impressions: row.impressions,
+                        reactions: row.reactions ? JSON.parse(row.reactions) : {},
+                    },
+                    trackedAt: row.tracked_at,
+                }));
+
+                resolve(engagement);
+            });
+        });
+    }
+
+    async getTrendsDataFromDB(startDate, endDate, userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT
+                    DATE(actual_upload_time) as date,
+                    COUNT(*) as totalUploads,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads
+                FROM analytics_uploads
+                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                GROUP BY DATE(actual_upload_time)
+                ORDER BY date DESC
+            `;
+
+            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+                if (err) {
+                    console.error('Error getting trends data:', err);
+                    resolve([]);
+                    return;
+                }
+
+                // Process daily stats and engagement data
+                const dailyStats = [];
+                let i = 0;
+                while (startDate <= endDate) {
+                    const dateString = startDate.toISOString().split('T')[0];
+                    const dbRow = rows.find(row => row.date === dateString) || {
+                        totalUploads: 0,
+                        successfulUploads: 0
+                    };
+
+                    dailyStats.push({
+                        date: dateString,
+                        totalUploads: dbRow.totalUploads,
+                        successfulUploads: dbRow.successfulUploads,
+                        totalViews: 0, // Will be populated from engagement data
+                        totalEngagement: 0,
+                        topPerformingUpload: null
+                    });
+
+                    startDate.setDate(startDate.getDate() + 1);
+                }
+
+                // Get engagement data for the same period
+                this.getEngagementData(new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000), endDate, userId)
+                    .then(engagementData => {
+                        // Aggregate engagement by date
+                        const engagementByDate = {};
+                        engagementData.forEach(eng => {
+                            const dateKey = new Date(eng.trackedAt).toISOString().split('T')[0];
+                            if (!engagementByDate[dateKey]) {
+                                engagementByDate[dateKey] = { totalViews: 0, totalEngagement: 0 };
+                            }
+                            engagementByDate[dateKey].totalViews += eng.metrics.views || 0;
+                            engagementByDate[dateKey].totalEngagement +=
+                                (eng.metrics.likes || 0) + (eng.metrics.comments || 0) + (eng.metrics.shares || 0);
+                        });
+
+                        // Merge engagement data into daily stats
+                        dailyStats.forEach(day => {
+                            const engData = engagementByDate[day.date];
+                            if (engData) {
+                                day.totalViews = engData.totalViews;
+                                day.totalEngagement = engData.totalEngagement;
+                            }
+                        });
+
+                        const result = {
+                            dailyStats,
+                            weeklyStats: this.getWeeklyStats(dailyStats),
+                            monthlyStats: this.getMonthlyStats(dailyStats)
+                        };
+
+                        resolve(result);
+                    })
+                    .catch(error => {
+                        console.error('Error getting engagement for trends:', error);
+                        resolve({
+                            dailyStats,
+                            weeklyStats: this.getWeeklyStats(dailyStats),
+                            monthlyStats: this.getMonthlyStats(dailyStats)
+                        });
+                    });
+            });
+        });
+    }
+
+    async getAccountComparisonFromDB(startDate, endDate, userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT
+                    account_name,
+                    COUNT(*) as totalUploads,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                    AVG(processing_time) as averageProcessingTime
+                FROM analytics_uploads
+                WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
+                GROUP BY account_name
+            `;
+
+            this.db.all(query, [userId, startDate.toISOString(), endDate.toISOString()], (err, rows) => {
+                if (err) {
+                    console.error('Error getting account comparison:', err);
+                    resolve([]);
+                    return;
+                }
+
+                const accounts = rows.map(row => ({
+                    accountName: row.account_name,
+                    totalUploads: row.totalUploads,
+                    successfulUploads: row.successfulUploads,
+                    successRate: row.totalUploads > 0 ? ((row.successfulUploads / row.totalUploads) * 100) : 0,
+                    averageProcessingTime: row.averageProcessingTime || 0,
+                    // Placeholder values for engagement (would need separate query)
+                    totalViews: 0,
+                    totalLikes: 0,
+                    totalComments: 0,
+                    totalShares: 0,
+                    averageEngagementRate: 0
+                }));
+
+                resolve(accounts);
+            });
+        });
+    }
+
+    async getCategoryStatsFromDB(userId) {
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT
+                    category,
+                    COUNT(*) as totalUploads,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                    GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
+                FROM analytics_uploads
+                WHERE user_id = ? AND category IS NOT NULL AND category != ''
+                GROUP BY category
+            `;
+
+            this.db.all(query, [userId], (err, rows) => {
+                if (err) {
+                    console.error('Error getting category stats:', err);
+                    resolve([]);
+                    return;
+                }
+
+                const categories = rows.map(row => ({
+                    category: row.category,
+                    totalUploads: row.totalUploads,
+                    averageViews: 0, // Would need engagement data
+                    averageEngagementRate: 0,
+                    topHashtags: row.hashtagsList ? this.extractTopHashtags(row.hashtagsList) : []
+                }));
+
+                resolve(categories);
+            });
+        });
+    }
+
+    extractTopHashtags(hashtagsString) {
+        // Parse and count hashtags from the concatenated string
+        const hashtagCount = {};
+        const tags = hashtagsString.split(',').filter(tag => tag.trim());
+
+        tags.forEach(tagList => {
+            try {
+                const parsed = JSON.parse(tagList);
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(tag => {
+                        hashtagCount[tag] = (hashtagCount[tag] || 0) + 1;
+                    });
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+        });
+
+        return Object.entries(hashtagCount)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 10)
+            .map(([tag]) => tag);
     }
 
     /**

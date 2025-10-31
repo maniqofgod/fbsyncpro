@@ -39,38 +39,127 @@ migrateSettings();
 console.log('✅ Database migration completed!');
 console.log('📁 Database file: database.sqlite');
 
+// Create admin user seed
+console.log('\n👤 Checking admin user...');
+seedAdminUser();
+console.log('👤 Admin user seeding completed!');
+
+function seedAdminUser() {
+    const db = new Database(dbPath);
+
+    // Check if admin user exists
+    const existingAdmin = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+    if (existingAdmin) {
+        console.log('ℹ️ Admin user already exists, skipping...');
+
+        // Clear existing queue items that don't have user_id
+        // This will cause issues, so we need to clean them or add user_id
+        console.log('\\n🔄 Clearing old queue data that needs user_id...');
+
+        // Check if there are old queue items without user_id
+        try {
+            const queueCount = db.prepare('SELECT COUNT(*) as count FROM queue WHERE user_id IS NULL').get();
+            if (queueCount && queueCount.count > 0) {
+                console.log(`⚠️ Found ${queueCount.count} old queue items without user_id, clearing them...`);
+                db.exec('DELETE FROM queue WHERE user_id IS NULL');
+                console.log('✅ Old queue items cleared');
+            }
+        } catch (error) {
+            console.log('ℹ️ No old queue data found');
+        }
+
+        db.close();
+        return;
+    }
+
+    // Create admin user
+    const bcrypt = require('bcryptjs');
+    const adminPassword = '!*GanTeng188';
+    const saltRounds = 10;
+    const hashedPassword = bcrypt.hashSync(adminPassword, saltRounds);
+
+    const adminUserId = require('uuid').v4();
+
+    db.prepare(`
+        INSERT INTO users (id, username, password_hash, display_name, role, created_at)
+        VALUES (?, 'admin', ?, 'Administrator', 'admin', ?)
+    `).run(adminUserId, hashedPassword, new Date().toISOString());
+
+    console.log('✅ Admin user created!');
+    console.log('   Username: admin');
+    console.log('   Password: !*GanTeng188');
+    console.log('   Role: admin');
+
+    // Clear existing queue items that don't have user_id
+    console.log('\\n🔄 Clearing old queue data that needs user_id...');
+
+    try {
+        const queueCount = db.prepare('SELECT COUNT(*) as count FROM queue WHERE user_id IS NULL').get();
+        if (queueCount && queueCount.count > 0) {
+            console.log(`⚠️ Found ${queueCount.count} old queue items without user_id, clearing them...`);
+            db.exec('DELETE FROM queue WHERE user_id IS NULL');
+            console.log('✅ Old queue items cleared');
+        }
+    } catch (error) {
+        console.log('ℹ️ No old queue data found');
+    }
+
+    db.close();
+}
+
 function createDatabaseStructure() {
     const db = new Database(dbPath);
 
-    // Table for Gemini APIs
+    // Table for User Facebook Accounts (per user)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS facebook_accounts (
+            id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT DEFAULT 'personal',
+            cookie TEXT,
+            pages_data TEXT,
+            is_valid BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Table for Gemini APIs (per user)
     db.exec(`
         CREATE TABLE IF NOT EXISTS gemini_apis (
             id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
             api_key TEXT NOT NULL,
             name TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             is_valid BOOLEAN DEFAULT 1,
             last_used DATETIME,
-            usage_count INTEGER DEFAULT 0
+            usage_count INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
 
-    // Table for Gemini usage stats
+    // Table for Gemini usage stats (global - shared across users)
     db.exec(`
         CREATE TABLE IF NOT EXISTS gemini_usage (
             id INTEGER PRIMARY KEY,
+            user_id TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             success BOOLEAN,
             error_message TEXT,
             response_time_ms INTEGER,
-            model_name TEXT
+            model_name TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
 
-    // Table for uploads analytics
+    // Table for uploads analytics (per user)
     db.exec(`
         CREATE TABLE IF NOT EXISTS uploads_analytics (
             id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
             account_name TEXT,
             page_id TEXT,
             page_name TEXT,
@@ -92,14 +181,16 @@ function createDatabaseStructure() {
             priority TEXT,
             thumbnail_url TEXT,
             video_url TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
 
-    // Table for engagement analytics
+    // Table for engagement analytics (per user)
     db.exec(`
         CREATE TABLE IF NOT EXISTS engagement_analytics (
             id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
             upload_id TEXT,
             account_name TEXT,
             page_name TEXT,
@@ -107,14 +198,15 @@ function createDatabaseStructure() {
             metrics TEXT,
             tracked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(upload_id) REFERENCES uploads_analytics(id)
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
 
-    // Table for queue items
+    // Table for queue items (per user)
     db.exec(`
         CREATE TABLE IF NOT EXISTS queue (
             id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
             account_name TEXT,
             page_id TEXT,
             page_name TEXT,
@@ -133,11 +225,39 @@ function createDatabaseStructure() {
             error_message TEXT,
             upload_url TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
     `);
 
-    // Table for app settings (replacing electron-store)
+    // Table for user authentication
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            role TEXT DEFAULT 'user',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME
+        )
+    `);
+
+    // Table for app settings (per user)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            UNIQUE(user_id, key)
+        )
+    `);
+
+    // Table for global app settings (shared)
     db.exec(`
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -145,7 +265,7 @@ function createDatabaseStructure() {
         )
     `);
 
-    // Insert default settings
+    // Insert default global settings
     const insertSetting = db.prepare(`
         INSERT OR REPLACE INTO settings (key, value)
         VALUES (?, ?)
