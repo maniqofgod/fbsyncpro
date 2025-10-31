@@ -401,6 +401,10 @@ class QueueProcessor {
             if (pendingItems.length === 0) {
                 console.log('ℹ️ No pending items found in queue');
                 return;
+            } else {
+                console.log(`🔄 Running scheduled queue processing...`);
+                console.log(`⚠️ Queue processing already running, skipping...`);
+                console.log(`✅ Scheduled queue processing completed`);
             }
 
             for (const item of pendingItems) {

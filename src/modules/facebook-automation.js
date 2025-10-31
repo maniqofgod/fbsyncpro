@@ -61,11 +61,11 @@ class FacebookAutomation {
             console.log('🔄 Checking for switch profile and navigating to dashboard...');
 
             // Step 1: Navigate to profile
-            console.log('\n📍 Step 1: Navigate to profile');
+            console.log('📍 Step 1: Navigate to profile');
             await page.goto(`https://www.facebook.com/profile.php?id=${pageId}`, { waitUntil: 'networkidle2' });
             await page.waitForTimeout(3000);
             console.log('✅ Profile loaded - Taking initial screenshot...');
-            await page.screenshot({ path: 'debug-profile-loaded.png', fullPage: true });
+            await page.screenshot({ path: 'debug-profile-loaded.png', width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-profile-loaded.png');
 
             // Step 2: Visual indicator for dashboard click
@@ -101,7 +101,7 @@ class FacebookAutomation {
 
             await page.mouse.click(150, 200);
             console.log('✅ 🖱️ DASHBOARD CLICKED at (150, 200) - Taking screenshot...');
-            await page.screenshot({ path: 'debug-after-dashboard-click.png', fullPage: true });
+            await page.screenshot({ path: 'debug-after-dashboard-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-after-dashboard-click.png');
             await page.waitForTimeout(2000);
 
@@ -159,7 +159,7 @@ class FacebookAutomation {
                     console.log(`✅ 🖱️ UBAH CLICKED at (${coord.x}, ${coord.y}) - ${coord.name}`);
 
                     // Take screenshot after each click
-                    await page.screenshot({ path: `debug-after-ubah-${coord.name.toLowerCase()}.png`, fullPage: true });
+                    await page.screenshot({ path: `debug-after-ubah-${coord.name.toLowerCase()}.png`, width: 1024, height: 768 });
                     console.log(`📸 Screenshot: debug-after-ubah-${coord.name.toLowerCase()}.png`);
 
                     await page.waitForTimeout(3000);
@@ -255,7 +255,7 @@ class FacebookAutomation {
                     await page.click(sel);
                     selectorFound = true;
                     console.log(`✅ Clicked account selector: ${sel}`);
-                    await page.screenshot({ path: `debug-after-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+                    await page.screenshot({ path: `debug-after-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png` });
                     console.log(`📸 Screenshot: debug-after-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
                     break;
                 } catch (e) {
@@ -336,7 +336,7 @@ class FacebookAutomation {
 
             if (selected.success) {
                 console.log(`✅ Page selected successfully: ${selected.text}`);
-                await page.screenshot({ path: `debug-after-page-option-click-${pageId}.png`, fullPage: true });
+                await page.screenshot({ path: `debug-after-page-option-click-${pageId}.png` });
                 console.log(`📸 Screenshot: debug-after-page-option-click-${pageId}.png`);
                 await page.waitForTimeout(3000);
 
@@ -526,7 +526,7 @@ try {
             await page.click(sel);
             selectorFound = true;
             console.log(`✅ Clicked account selector: ${sel}`);
-            await page.screenshot({ path: `debug-reel-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+            await page.screenshot({ path: `debug-reel-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png` });
             console.log(`📸 Screenshot: debug-reel-selector-click-${sel.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
             break;
         } catch (e) {
@@ -587,7 +587,7 @@ try {
 
     if (selected.success) {
         console.log(`✅ Page selected successfully: ${selected.text}`);
-        await page.screenshot({ path: `debug-reel-page-option-click-${uploadData.pageId}.png`, fullPage: true });
+        await page.screenshot({ path: `debug-reel-page-option-click-${uploadData.pageId}.png` });
         console.log(`📸 Screenshot: debug-reel-page-option-click-${uploadData.pageId}.png`);
         await page.waitForTimeout(3000);
     } else {
@@ -638,7 +638,7 @@ try {
 
             await fileInput.uploadFile(videoPath);
             console.log('Video file uploaded successfully');
-            await page.screenshot({ path: 'debug-reel-after-video-upload.png', fullPage: true });
+            await page.screenshot({ path: 'debug-reel-after-video-upload.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-reel-after-video-upload.png');
 
             // Wait for upload to process
@@ -682,7 +682,7 @@ try {
 
             console.log('🎯 Clicking first next at (228, 903)');
             await page.mouse.click(228, 903);
-            await page.screenshot({ path: 'debug-reel-after-first-next-click.png', fullPage: true });
+            await page.screenshot({ path: 'debug-reel-after-first-next-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-reel-after-first-next-click.png');
             await page.waitForTimeout(3000);
 
@@ -726,7 +726,7 @@ try {
                 await captionInput.click({ clickCount: 3 });
                 await captionInput.type(uploadData.caption || 'Test posting coordinate (700, 615)');
                 console.log('✅ Caption inputted');
-                await page.screenshot({ path: 'debug-reel-after-caption-input-click.png', fullPage: true });
+                await page.screenshot({ path: 'debug-reel-after-caption-input-click.png' , width: 1024, height: 768 });
                 console.log('📸 Screenshot: debug-reel-after-caption-input-click.png');
             }
 
@@ -764,12 +764,12 @@ try {
 
             console.log('🎯 Clicking second next at (300, 903)');
             await page.mouse.click(300, 903);
-            await page.screenshot({ path: 'debug-reel-after-second-next-click.png', fullPage: true });
+            await page.screenshot({ path: 'debug-reel-after-second-next-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-reel-after-second-next-click.png');
             await page.waitForTimeout(10000);
 
             // Take screenshot before posting
-            await page.screenshot({ path: 'debug-700-615-before.png', fullPage: true });
+            await page.screenshot({ path: 'debug-700-615-before.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot before posting: debug-700-615-before.png');
 
             // Click posting button
@@ -818,7 +818,7 @@ try {
             console.log('✅ Posting button clicked at (650, 840)');
 
             // Take screenshot after posting button click
-            await page.screenshot({ path: 'debug-700-615-after-posting-click.png', fullPage: true });
+            await page.screenshot({ path: 'debug-700-615-after-posting-click.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot after posting button click: debug-700-615-after-posting-click.png');
 
             // Wait for success message after posting
@@ -1102,7 +1102,7 @@ if (switchSuccess) {
 
                         await postArea.click();
                         console.log(`✅ Clicked post creation area: ${selector}`);
-                        await page.screenshot({ path: `debug-post-creation-click-${selector.replace(/[^a-zA-Z0-9]/g, '_')}.png`, fullPage: true });
+                        await page.screenshot({ path: `debug-post-creation-click-${selector.replace(/[^a-zA-Z0-9]/g, '_')}.png` });
                         console.log(`📸 Screenshot: debug-post-creation-click-${selector.replace(/[^a-zA-Z0-9]/g, '_')}.png`);
                         break;
                     }
@@ -1154,7 +1154,7 @@ if (switchSuccess) {
                 if (fallbackClicked) {
                     console.log('✅ Clicked fallback post creation button.');
                     await page.waitForTimeout(500); // Give time for indicator to show
-                    await page.screenshot({ path: 'debug-post-creation-fallback-click.png', fullPage: true });
+                    await page.screenshot({ path: 'debug-post-creation-fallback-click.png' , width: 1024, height: 768 });
                     console.log('📸 Screenshot: debug-post-creation-fallback-click.png');
                 } else {
                     throw new Error('Post creation area not found');
@@ -1203,7 +1203,7 @@ if (switchSuccess) {
 
             await fileInput.uploadFile(videoPath);
             console.log('Video file uploaded successfully');
-            await page.screenshot({ path: 'debug-post-after-video-upload.png', fullPage: true });
+            await page.screenshot({ path: 'debug-post-after-video-upload.png' , width: 1024, height: 768 });
             console.log('📸 Screenshot: debug-post-after-video-upload.png');
 
             // Step 3: Wait for upload processing, input caption FIRST, then click "Berikutnya" button
@@ -1339,7 +1339,7 @@ if (switchSuccess) {
                 // Now input the caption
                 await page.keyboard.type(uploadData.caption || 'Uploaded via automation');
                 console.log('✅ Caption inputted BEFORE "Berikutnya" button click');
-                await page.screenshot({ path: 'debug-post-after-caption-input-click.png', fullPage: true });
+                await page.screenshot({ path: 'debug-post-after-caption-input-click.png' , width: 1024, height: 768 });
                 console.log('📸 Screenshot: debug-post-after-caption-input-click.png');
 
                 // Trigger change events
@@ -1463,7 +1463,7 @@ if (switchSuccess) {
 
                     if (clickResult.clicked) {
                         console.log(`✅ SUCCESS! Element clicked "Berikutnya" button: "${clickResult.text}"`);
-                        await page.screenshot({ path: 'debug-post-after-berikutnya-click.png', fullPage: true });
+                        await page.screenshot({ path: 'debug-post-after-berikutnya-click.png' , width: 1024, height: 768 });
                         console.log('📸 Screenshot: debug-post-after-berikutnya-click.png');
                         await page.waitForTimeout(2000);
                     } else {
@@ -1610,7 +1610,7 @@ if (switchSuccess) {
 
                     if (clickResult.clicked) {
                         console.log(`✅ SUCCESS! Element clicked "Kirim" button: "${clickResult.text}"`);
-                        await page.screenshot({ path: 'debug-post-after-kirim-click.png', fullPage: true });
+                        await page.screenshot({ path: 'debug-post-after-kirim-click.png' , width: 1024, height: 768 });
                         console.log('📸 Screenshot: debug-post-after-kirim-click.png');
 
                         // GET SUCCESS MESSAGE LIKE REELS - CHECK SHORT TEXT FRAGMENTS

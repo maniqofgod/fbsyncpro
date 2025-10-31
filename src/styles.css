@@ -1617,7 +1617,7 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 15px;
-    max-height: 400px;
+    max-height: 4000px;
     overflow-y: auto;
     padding-right: 8px;
 }
