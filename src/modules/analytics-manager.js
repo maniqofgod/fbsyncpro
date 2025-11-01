@@ -892,25 +892,37 @@ class AnalyticsManager {
             if (userRole === 'admin') {
                 query = `
                     SELECT
-                        account_name,
-                        COUNT(*) as totalUploads,
-                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                        AVG(processing_time) as averageProcessingTime
-                    FROM analytics_uploads
-                    WHERE actual_upload_time BETWEEN ? AND ?
-                    GROUP BY account_name
+                        u.account_name,
+                        COUNT(DISTINCT u.id) as totalUploads,
+                        SUM(CASE WHEN u.status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        AVG(u.processing_time) as averageProcessingTime,
+                        COALESCE(SUM(e.views), 0) as totalViews,
+                        COALESCE(SUM(e.likes), 0) as totalLikes,
+                        COALESCE(SUM(e.comments), 0) as totalComments,
+                        COALESCE(SUM(e.shares), 0) as totalShares,
+                        AVG(e.engagement_rate) as averageEngagementRate
+                    FROM analytics_uploads u
+                    LEFT JOIN analytics_engagement e ON u.id = e.upload_id
+                    WHERE u.actual_upload_time BETWEEN ? AND ?
+                    GROUP BY u.account_name
                 `;
                 params = [startDate.toISOString(), endDate.toISOString()];
             } else {
                 query = `
                     SELECT
-                        account_name,
-                        COUNT(*) as totalUploads,
-                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                        AVG(processing_time) as averageProcessingTime
-                    FROM analytics_uploads
-                    WHERE user_id = ? AND actual_upload_time BETWEEN ? AND ?
-                    GROUP BY account_name
+                        u.account_name,
+                        COUNT(DISTINCT u.id) as totalUploads,
+                        SUM(CASE WHEN u.status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        AVG(u.processing_time) as averageProcessingTime,
+                        COALESCE(SUM(e.views), 0) as totalViews,
+                        COALESCE(SUM(e.likes), 0) as totalLikes,
+                        COALESCE(SUM(e.comments), 0) as totalComments,
+                        COALESCE(SUM(e.shares), 0) as totalShares,
+                        AVG(e.engagement_rate) as averageEngagementRate
+                    FROM analytics_uploads u
+                    LEFT JOIN analytics_engagement e ON u.id = e.upload_id
+                    WHERE u.user_id = ? AND u.actual_upload_time BETWEEN ? AND ?
+                    GROUP BY u.account_name
                 `;
                 params = [userId, startDate.toISOString(), endDate.toISOString()];
             }
@@ -928,12 +940,11 @@ class AnalyticsManager {
                     successfulUploads: row.successfulUploads,
                     successRate: row.totalUploads > 0 ? ((row.successfulUploads / row.totalUploads) * 100) : 0,
                     averageProcessingTime: row.averageProcessingTime || 0,
-                    // Placeholder values for engagement (would need separate query)
-                    totalViews: 0,
-                    totalLikes: 0,
-                    totalComments: 0,
-                    totalShares: 0,
-                    averageEngagementRate: 0
+                    totalViews: row.totalViews || 0,
+                    totalLikes: row.totalLikes || 0,
+                    totalComments: row.totalComments || 0,
+                    totalShares: row.totalShares || 0,
+                    averageEngagementRate: row.averageEngagementRate || 0
                 }));
 
                 resolve(accounts);
@@ -948,25 +959,31 @@ class AnalyticsManager {
             if (userRole === 'admin') {
                 query = `
                     SELECT
-                        category,
-                        COUNT(*) as totalUploads,
-                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                        GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
-                    FROM analytics_uploads
-                    WHERE category IS NOT NULL AND category != ''
-                    GROUP BY category
+                        u.category,
+                        COUNT(DISTINCT u.id) as totalUploads,
+                        SUM(CASE WHEN u.status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        GROUP_CONCAT(DISTINCT u.hashtags) as hashtagsList,
+                        COALESCE(AVG(e.views), 0) as averageViews,
+                        COALESCE(AVG(e.engagement_rate), 0) as averageEngagementRate
+                    FROM analytics_uploads u
+                    LEFT JOIN analytics_engagement e ON u.id = e.upload_id
+                    WHERE u.category IS NOT NULL AND u.category != ''
+                    GROUP BY u.category
                 `;
                 params = [];
             } else {
                 query = `
                     SELECT
-                        category,
-                        COUNT(*) as totalUploads,
-                        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
-                        GROUP_CONCAT(DISTINCT hashtags) as hashtagsList
-                    FROM analytics_uploads
-                    WHERE user_id = ? AND category IS NOT NULL AND category != ''
-                    GROUP BY category
+                        u.category,
+                        COUNT(DISTINCT u.id) as totalUploads,
+                        SUM(CASE WHEN u.status = 'completed' THEN 1 ELSE 0 END) as successfulUploads,
+                        GROUP_CONCAT(DISTINCT u.hashtags) as hashtagsList,
+                        COALESCE(AVG(e.views), 0) as averageViews,
+                        COALESCE(AVG(e.engagement_rate), 0) as averageEngagementRate
+                    FROM analytics_uploads u
+                    LEFT JOIN analytics_engagement e ON u.id = e.upload_id
+                    WHERE u.user_id = ? AND u.category IS NOT NULL AND u.category != ''
+                    GROUP BY u.category
                 `;
                 params = [userId];
             }
@@ -981,8 +998,8 @@ class AnalyticsManager {
                 const categories = rows.map(row => ({
                     category: row.category,
                     totalUploads: row.totalUploads,
-                    averageViews: 0, // Would need engagement data
-                    averageEngagementRate: 0,
+                    averageViews: row.averageViews || 0,
+                    averageEngagementRate: row.averageEngagementRate || 0,
                     topHashtags: row.hashtagsList ? this.extractTopHashtags(row.hashtagsList) : []
                 }));
 

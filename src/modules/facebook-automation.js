@@ -443,6 +443,9 @@ class FacebookAutomation {
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             );
 
+            // Set Facebook language to Indonesian before setting cookies
+            await this.setFacebookLanguageToIndonesian(page);
+
             // Set cookies
             await this.setCookies(page, uploadData.cookie);
 
@@ -1007,12 +1010,15 @@ try {
 
             await this.initialize();
 
-            page = await this.browser.newPage();
+            const page = await this.browser.newPage();
 
             // Set user agent
             await page.setUserAgent(
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             );
+
+            // Set Facebook language to Indonesian before setting cookies
+            await this.setFacebookLanguageToIndonesian(page);
 
             // Set cookies
             await this.setCookies(page, uploadData.cookie);
@@ -1723,6 +1729,21 @@ if (switchSuccess) {
     // ... (methods lainnya tetap sama)
 
     /**
+     * Set Facebook language to Indonesian
+     * @param {Page} page - Puppeteer page instance
+     */
+    async setFacebookLanguageToIndonesian(page) {
+        try {
+            console.log('🌐 Setting Facebook language to Indonesian...');
+            await page.goto('https://www.facebook.com/?locale=id_ID', { waitUntil: 'domcontentloaded' });
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Give time for language to apply
+            console.log('✅ Facebook language set to Indonesian.');
+        } catch (error) {
+            console.warn('⚠️ Could not set Facebook language to Indonesian:', error.message);
+        }
+    }
+
+    /**
      * Inisialisasi Puppeteer browser
      */
     async initialize() {
@@ -1745,6 +1766,7 @@ if (switchSuccess) {
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
+                    '--disable-notifications', // Add this to disable notifications
                     '--disable-accelerated-2d-canvas',
                     '--no-first-run',
                     '--no-zygote',
@@ -2052,6 +2074,9 @@ if (switchSuccess) {
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             );
 
+            // Set Facebook language to Indonesian before setting cookies
+            await this.setFacebookLanguageToIndonesian(page);
+
             await this.setCookies(page, cookieData);
 
             await page.goto('https://www.facebook.com/pages/?category=your_pages', {
@@ -2144,6 +2169,9 @@ if (switchSuccess) {
             await page.setUserAgent(
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             );
+
+            // Set Facebook language to Indonesian before setting cookies
+            await this.setFacebookLanguageToIndonesian(page);
 
             await this.setCookies(page, cookieData);
 

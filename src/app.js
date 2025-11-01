@@ -28,6 +28,7 @@ let currentUser = null;
 // Analytics state
 let analyticsState = {
     currentTimeRange: '30d',
+    currentUserFilter: '',
     dashboardData: null,
     isLoading: false
 };
@@ -267,6 +268,7 @@ function initializeElements() {
     totalQueues: document.getElementById('total-queues'),
     adminShowBrowser: document.getElementById('admin-show-browser'),
     saveAdminSettingsBtn: document.getElementById('save-admin-settings-btn'),
+    refreshAdminDataBtn: document.getElementById('refresh-admin-data-btn'),
 
     // User Modal Elements
     userModal: document.getElementById('user-modal'),
@@ -401,6 +403,9 @@ function setupEventListeners() {
     if (elements.saveAdminSettingsBtn) {
         elements.saveAdminSettingsBtn.addEventListener('click', handleSaveAdminSettings);
     }
+    if (elements.refreshAdminDataBtn) {
+        elements.refreshAdminDataBtn.addEventListener('click', refreshAdminData);
+    }
 }
 
 // Setup navigation
@@ -514,6 +519,7 @@ function updateTabContent(tabName) {
             break;
         case 'analytics':
             loadAnalyticsData();
+            loadAnalyticsUsers(); // Load users for analytics filter
             break;
         case 'gemini':
             updateGeminiDisplay();
@@ -2118,6 +2124,46 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+// Load users for analytics filter dropdown (admin only)
+async function loadAnalyticsUsers() {
+    const isAdmin = appState.user?.role === 'admin' || appState.user?.username === 'admin';
+
+    if (!isAdmin) {
+        // Hide user filter for non-admin users
+        const userFilterSelect = document.getElementById('user-filter-select');
+        if (userFilterSelect) {
+            userFilterSelect.style.display = 'none';
+        }
+        return;
+    }
+
+    // Show user filter for admin users
+    const userFilterSelect = document.getElementById('user-filter-select');
+    if (userFilterSelect) {
+        userFilterSelect.style.display = 'inline-block';
+    }
+
+    try {
+        const usersResponse = await fetch(`${API_BASE}/api/admin/users`);
+        const usersResult = await usersResponse.json();
+
+        if (usersResult.success && usersResult.users) {
+            // Populate user dropdown
+            const userSelect = document.getElementById('user-filter-select');
+            if (userSelect) {
+                userSelect.innerHTML = '<option value="">-- Semua User --</option>' +
+                    usersResult.users.map(user => `<option value="${user.id}">${user.displayName} (${user.username})</option>`).join('');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading users for analytics filter:', error);
+        const userFilterSelect = document.getElementById('user-filter-select');
+        if (userFilterSelect) {
+            userFilterSelect.style.display = 'none';
+        }
+    }
+}
+
 // Analytics Functions
 async function loadAnalyticsData() {
     if (analyticsState.isLoading) {
@@ -2127,12 +2173,21 @@ async function loadAnalyticsData() {
 
     try {
         analyticsState.isLoading = true;
-        console.log(`📊 Loading analytics data for ${analyticsState.currentTimeRange}`);
+        console.log(`📊 Loading analytics data for ${analyticsState.currentTimeRange}, user filter: ${analyticsState.currentUserFilter}`);
 
         // Show loading state
         showAnalyticsLoading();
 
-        const result = await fetch(`${API_BASE}/api/analytics?timeRange=${analyticsState.currentTimeRange}`);
+        // Build query parameters
+        const params = new URLSearchParams({
+            timeRange: analyticsState.currentTimeRange
+        });
+
+        if (analyticsState.currentUserFilter) {
+            params.append('userId', analyticsState.currentUserFilter);
+        }
+
+        const result = await fetch(`${API_BASE}/api/analytics?${params}`);
         const response = await result.json();
 
         if (response.success) {
@@ -2270,7 +2325,7 @@ function updatePerformanceByType(performance) {
             <div class="performance-card">
                 <h4><i class="fas fa-video"></i> Facebook Reels</h4>
                 <div class="stat-number">${reels.uploads || 0}</div>
-                <div class="stat-label">Total Uploads</div>
+                <div class="stat-label">Total All User Uploads</div>
                 <div class="performance-details">
                     <div class="performance-detail">
                         <span class="detail-label">Views:</span>
@@ -2285,7 +2340,7 @@ function updatePerformanceByType(performance) {
             <div class="performance-card">
                 <h4><i class="fas fa-film"></i> Video Posts</h4>
                 <div class="stat-number">${posts.uploads || 0}</div>
-                <div class="stat-label">Total Uploads</div>
+                <div class="stat-label">Total All User Uploads</div>
                 <div class="performance-details">
                     <div class="performance-detail">
                         <span class="detail-label">Views:</span>
@@ -2323,6 +2378,7 @@ function updateAccountComparison(accounts) {
                 <thead>
                     <tr>
                         <th>Account</th>
+                        <th>Page</th>
                         <th>Uploads</th>
                         <th>Success Rate</th>
                         <th>Total Views</th>
@@ -2334,6 +2390,7 @@ function updateAccountComparison(accounts) {
                     ${accounts.map(account => `
                         <tr>
                             <td>${account.accountName}</td>
+                            <td>${account.pageName || account.pageId || 'N/A'}</td>
                             <td>${account.totalUploads}</td>
                             <td>${account.successRate?.toFixed(1) || 0}%</td>
                             <td>${account.totalViews || 0}</td>
@@ -2425,6 +2482,15 @@ function updateTrendsChart(trends) {
 
 // Event listeners for analytics
 function setupAnalyticsEventListeners() {
+    // User filter selector
+    const userFilterSelect = document.getElementById('user-filter-select');
+    if (userFilterSelect) {
+        userFilterSelect.addEventListener('change', (e) => {
+            analyticsState.currentUserFilter = e.target.value;
+            loadAnalyticsData();
+        });
+    }
+
     // Time range selector
     const timeRangeSelect = document.getElementById('time-range-select');
     if (timeRangeSelect) {
@@ -2457,7 +2523,8 @@ function setupAnalyticsEventListeners() {
                     },
                     body: JSON.stringify({
                         format: 'json',
-                        timeRange: analyticsState.currentTimeRange
+                        timeRange: analyticsState.currentTimeRange,
+                        userId: analyticsState.currentUserFilter
                     })
                 });
                 const response = await result.json();
@@ -3667,6 +3734,31 @@ window.deleteAdminAccount = async function(accountId, accountName) {
         showToast(`Error menghapus akun: ${error.message}`, 'error');
     }
 };
+
+// Refresh admin data function
+async function refreshAdminData() {
+    try {
+        // Disable the refresh button
+        if (elements.refreshAdminDataBtn) {
+            elements.refreshAdminDataBtn.disabled = true;
+            elements.refreshAdminDataBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+        }
+
+        // Call loadAdminData to refresh all admin data
+        await loadAdminData();
+
+        showToast('Admin data berhasil diperbaharui', 'success');
+    } catch (error) {
+        console.error('Error refreshing admin data:', error);
+        showToast(`Gagal memperbaharui data admin: ${error.message}`, 'error');
+    } finally {
+        // Re-enable the refresh button
+        if (elements.refreshAdminDataBtn) {
+            elements.refreshAdminDataBtn.disabled = false;
+            elements.refreshAdminDataBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+        }
+    }
+}
 
 // Update loadAdminData to load admin settings and admin accounts
 const originalLoadAdminData = loadAdminData;

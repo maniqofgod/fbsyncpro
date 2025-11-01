@@ -54,6 +54,13 @@ reelsync-pro/
 - ✅ Pages discovery dan management
 - ✅ Account status monitoring
 
+#### Cara Mendapatkan Cookie
+Untuk mendapatkan cookie yang diperlukan untuk autentikasi, ikuti langkah-langkah berikut:
+1.  Install ekstensi Chrome "Get cookies.txt Locally".
+2.  Buka Facebook di browser Chrome Anda dan pastikan Anda sudah login.
+3.  Klik ikon ekstensi "Get cookies.txt Locally" di toolbar Chrome Anda.
+4.  Pilih format "JSON array" dan salin semua hasil yang muncul. Ini adalah cookie yang akan Anda gunakan.
+
 ### 2. Upload Management
 - ✅ Dual upload types (Reels & Video Posts)
 - ✅ File picker dengan filter video formats

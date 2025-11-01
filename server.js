@@ -1268,23 +1268,31 @@ app.get('/api/gemini/stats', async (req, res) => {
 app.get('/api/analytics', async (req, res) => {
     try {
         const timeRange = req.query.timeRange || '30d';
-        const userId = req.user.id;
         const userRole = req.user.role;
 
-        console.log(`📊 Getting analytics data for time range: ${timeRange} (User: ${userId}, Role: ${userRole})`);
+        // Determine which user's data to fetch
+        let targetUserId = req.user.id; // Default to current user
+
+        // Admin can view other users' analytics if userId is provided
+        if (userRole === 'admin' && req.query.userId && req.query.userId !== 'null' && req.query.userId !== 'undefined') {
+            targetUserId = req.query.userId;
+        }
+
+        console.log(`📊 Getting analytics data for time range: ${timeRange} (Target User: ${targetUserId}, Requesting User: ${req.user.id}, Role: ${userRole})`);
 
         if (!globalAnalyticsManager) {
             globalAnalyticsManager = new AnalyticsManager();
         }
 
-        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange, userId, userRole);
+        const dashboardData = await globalAnalyticsManager.getDashboardData(timeRange, targetUserId, userRole);
 
         if (dashboardData) {
             console.log('✅ Analytics data retrieved successfully');
             res.json({
                 success: true,
                 data: dashboardData,
-                timeRange: timeRange
+                timeRange: timeRange,
+                targetUserId: targetUserId
             });
         } else {
             console.log('❌ Failed to retrieve analytics data');

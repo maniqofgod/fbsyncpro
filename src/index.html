@@ -298,6 +298,9 @@
                     <div class="tab-header">
                         <h2>Analytics & Performance Dashboard</h2>
                         <div class="analytics-actions">
+                            <select id="user-filter-select" class="user-filter-select">
+                                <option value="">-- Semua User --</option>
+                            </select>
                             <select id="time-range-select" class="time-range-select">
                                 <option value="7d">7 Hari Terakhir</option>
                                 <option value="30d" selected>30 Hari Terakhir</option>
@@ -309,53 +312,6 @@
                             <button class="btn-secondary" id="export-analytics-btn">
                                 <i class="fas fa-download"></i> Export
                             </button>
-                        </div>
-                    </div>
-
-                    <!-- Overview Stats -->
-                    <div class="analytics-section">
-                        <h3>Overview</h3>
-                        <div class="analytics-stats-grid" id="overview-stats">
-                            <div class="stat-card">
-                                <span class="stat-number" id="total-uploads">0</span>
-                                <span class="stat-label">Total Uploads</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-number" id="success-rate">0%</span>
-                                <span class="stat-label">Success Rate</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-number" id="total-views">0</span>
-                                <span class="stat-label">Total Views</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-number" id="avg-engagement">0%</span>
-                                <span class="stat-label">Avg Engagement</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Performance by Type -->
-                    <div class="analytics-section">
-                        <h3>Performance by Content Type</h3>
-                        <div class="performance-comparison" id="performance-by-type">
-                            <div class="empty-state">
-                                <i class="fas fa-chart-pie"></i>
-                                <h3>Belum ada data</h3>
-                                <p>Data analytics akan muncul setelah upload pertama.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Account Comparison -->
-                    <div class="analytics-section">
-                        <h3>Account Performance</h3>
-                        <div class="account-comparison" id="account-comparison">
-                            <div class="empty-state">
-                                <i class="fas fa-users"></i>
-                                <h3>Belum ada data akun</h3>
-                                <p>Performance comparison akan muncul setelah upload dari multiple accounts.</p>
-                            </div>
                         </div>
                     </div>
 
@@ -373,14 +329,14 @@
                         </div>
                     </div>
 
-                    <!-- Trends Chart -->
+                    <!-- Performance by Type -->
                     <div class="analytics-section">
-                        <h3>Upload Trends</h3>
-                        <div class="trends-chart" id="trends-chart">
+                        <h3>Performance by Content Type</h3>
+                        <div class="performance-comparison" id="performance-by-type">
                             <div class="empty-state">
-                                <i class="fas fa-chart-line"></i>
-                                <h3>Belum ada trend data</h3>
-                                <p>Trend analysis akan muncul setelah beberapa hari upload activity.</p>
+                                <i class="fas fa-chart-pie"></i>
+                                <h3>Belum ada data</h3>
+                                <p>Data analytics akan muncul setelah upload pertama.</p>
                             </div>
                         </div>
                     </div>
@@ -442,81 +398,146 @@
                 <!-- Admin Tab -->
                 <div class="tab-pane" id="admin">
                     <div class="tab-header">
-                        <h2>Admin Panel - Manajemen User</h2>
-                        <button class="btn-primary" id="add-user-btn">
-                            <i class="fas fa-user-plus"></i> Tambah User Baru
-                        </button>
-                    </div>
-
-                    <div class="admin-stats">
-                        <div class="stat-card">
-                            <span class="stat-number" id="total-users">0</span>
-                            <span class="stat-label">Total Users</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-number" id="active-users">0</span>
-                            <span class="stat-label">Active Today</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-number" id="total-queues">0</span>
-                            <span class="stat-label">Total Queue Items</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="stat-number" id="total-accounts">0</span>
-                            <span class="stat-label">Total Accounts</span>
+                        <h2><i class="fas fa-crown"></i> Admin Panel - System Management</h2>
+                        <div class="admin-header-actions">
+                            <button class="btn-primary" id="add-user-btn">
+                                <i class="fas fa-user-plus"></i> Tambah User Baru
+                            </button>
+                            <button class="btn-secondary" id="refresh-admin-data-btn">
+                                <i class="fas fa-sync-alt"></i> Refresh Data
+                            </button>
                         </div>
                     </div>
 
-                    <div class="admin-section">
-                        <h3>System Settings</h3>
-                        <div class="settings-form">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="admin-show-browser">
-                                    <span class="checkbox-custom"></span>
-                                    Tampilkan browser saat upload (untuk monitoring)
-                                </label>
-                                <small class="form-help">Jika dicentang, browser akan terlihat saat upload. Jika tidak, browser akan berjalan di background.</small>
+                    <!-- System Overview Stats -->
+                    <div class="admin-overview">
+                        <h3><i class="fas fa-chart-line"></i> System Overview</h3>
+                        <div class="admin-stats-grid">
+                            <div class="stat-card stat-card-primary">
+                                <div class="stat-icon">
+                                    <i class="fas fa-users"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <span class="stat-number" id="total-users">0</span>
+                                    <span class="stat-label">Total Users</span>
+                                </div>
                             </div>
-                            <div class="form-actions">
-                                <button type="button" class="btn-primary" id="save-admin-settings-btn">
-                                    <i class="fas fa-save"></i> Simpan Pengaturan Sistem
+                            <div class="stat-card stat-card-success">
+                                <div class="stat-icon">
+                                    <i class="fas fa-user-check"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <span class="stat-number" id="active-users">0</span>
+                                    <span class="stat-label">Active Today</span>
+                                </div>
+                            </div>
+                            <div class="stat-card stat-card-info">
+                                <div class="stat-icon">
+                                    <i class="fas fa-list"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <span class="stat-number" id="total-queues">0</span>
+                                    <span class="stat-label">Total Queue Items</span>
+                                </div>
+                            </div>
+                            <div class="stat-card stat-card-warning">
+                                <div class="stat-icon">
+                                    <i class="fab fa-facebook"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <span class="stat-number" id="total-accounts">0</span>
+                                    <span class="stat-label">Total Accounts</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Settings Section -->
+                    <div class="admin-section">
+                        <div class="admin-section-header">
+                            <h3><i class="fas fa-cogs"></i> System Settings</h3>
+                            <div class="section-actions">
+                                <button type="button" class="btn-primary btn-sm" id="save-admin-settings-btn">
+                                    <i class="fas fa-save"></i> Save Settings
                                 </button>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="admin-section">
-                        <h3>Manajemen Akun Facebook (Semua User)</h3>
-                        <div class="admin-accounts-list" id="admin-accounts-list">
-                            <div class="empty-state">
-                                <i class="fas fa-users"></i>
-                                <h3>Loading accounts...</h3>
+                        <div class="admin-section-content">
+                            <div class="settings-grid">
+                                <div class="setting-item">
+                                    <div class="setting-control">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="admin-show-browser">
+                                            <span class="checkbox-custom"></span>
+                                            <span class="setting-label">Show Browser During Upload</span>
+                                        </label>
+                                    </div>
+                                    <div class="setting-description">
+                                        <small class="form-help">When enabled, browser will be visible during uploads for monitoring. When disabled, uploads run in background.</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
+                    <!-- User Management Section -->
                     <div class="admin-section">
-                        <h3>Users List</h3>
-                        <div class="user-table-container">
-                            <table class="user-table" id="user-table">
-                                <thead>
-                                    <tr>
-                                        <th>Username</th>
-                                        <th>Display Name</th>
-                                        <th>Role</th>
-                                        <th>Created</th>
-                                        <th>Last Login</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="user-table-body">
-                                    <!-- Users will be populated here -->
-                                </tbody>
-                            </table>
-                            <div class="empty-state" id="user-empty-state">
-                                <i class="fas fa-users"></i>
-                                <h3>Loading users...</h3>
+                        <div class="admin-section-header">
+                            <h3><i class="fas fa-users-cog"></i> User Management</h3>
+                            <div class="section-actions">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="user-search" placeholder="Search users...">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="admin-section-content">
+                            <div class="user-table-container">
+                                <table class="user-table" id="user-table">
+                                    <thead>
+                                        <tr>
+                                            <th><i class="fas fa-user"></i> Username</th>
+                                            <th><i class="fas fa-id-card"></i> Display Name</th>
+                                            <th><i class="fas fa-shield-alt"></i> Role</th>
+                                            <th><i class="fas fa-calendar-plus"></i> Created</th>
+                                            <th><i class="fas fa-clock"></i> Last Login</th>
+                                            <th><i class="fas fa-cogs"></i> Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="user-table-body">
+                                        <!-- Users will be populated here -->
+                                    </tbody>
+                                </table>
+                                <div class="empty-state" id="user-empty-state">
+                                    <i class="fas fa-users"></i>
+                                    <h3>Loading users...</h3>
+                                    <p>Please wait while we load the user data.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Management Section -->
+                    <div class="admin-section">
+                        <div class="admin-section-header">
+                            <h3><i class="fab fa-facebook"></i> Facebook Accounts (All Users)</h3>
+                            <div class="section-actions">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="account-search" placeholder="Search accounts...">
+                                </div>
+                                <button class="btn-secondary btn-sm" id="refresh-accounts-btn">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="admin-section-content">
+                            <div class="admin-accounts-list" id="admin-accounts-list">
+                                <div class="empty-state">
+                                    <i class="fas fa-users"></i>
+                                    <h3>Loading accounts...</h3>
+                                    <p>Please wait while we load the account data.</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -526,7 +547,7 @@
                 <div class="tab-pane" id="settings">
                     <div class="tab-header">
                         <h2>Pengaturan Aplikasi</h2>
-u                    </div>
+                    </div>
 
                     <form class="settings-form" id="settings-form">
                         <div class="form-group">
